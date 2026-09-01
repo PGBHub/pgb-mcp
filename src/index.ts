@@ -56,6 +56,21 @@ function extractDbFromArgs(): string {
 function extractEndpoint(): string {
   if (cliArgs.endpoint) return cliArgs.endpoint.replace(/\/$/, "");
   if (cliArgs.e) return cliArgs.e.replace(/\/$/, "");
+  if (cliArgs.url) {
+    try {
+      if (cliArgs.url.startsWith("http://") || cliArgs.url.startsWith("https://")) {
+        return cliArgs.url.replace(/\/$/, "");
+      }
+      const parsed = new URL(cliArgs.url);
+      const host = parsed.hostname;
+      if (host && host !== "localhost" && host !== "127.0.0.1") {
+        const domain = host.startsWith("pg.") ? host.replace(/^pg\./, "pgbox.") : host;
+        return `https://${domain}`;
+      }
+    } catch {
+      // ignore
+    }
+  }
   return (process.env.PGBOX_ENDPOINT || "https://cloud.pgboxhub.com").replace(/\/$/, "");
 }
 
@@ -77,6 +92,44 @@ const server = new Server(
 
 // Register MCP Tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const authHeaders: Record<string, string> = {
+    Accept: "application/json",
+    ...(PGBOX_API_KEY ? { Authorization: `Bearer ${PGBOX_API_KEY}` } : {}),
+  };
+
+  const dynamicActionTools: Array<{
+    name: string;
+    description: string;
+    inputSchema: { type: string; properties: Record<string, unknown>; required?: string[] };
+  }> = [];
+
+  try {
+    const url = `${PGBOX_ENDPOINT}/api/v1/databases/${encodeURIComponent(PGBOX_DATABASE)}/schema.json`;
+    const res = await fetch(url, { headers: authHeaders, signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const data = (await res.json()) as { actions?: Record<string, { description?: string; input_schema?: Record<string, string>; sample_params?: Record<string, unknown> }> };
+      const actions = data?.actions || {};
+      for (const [actName, actMeta] of Object.entries(actions)) {
+        const props: Record<string, unknown> = {};
+        const inSchema = actMeta.input_schema || {};
+        for (const [pName, pType] of Object.entries(inSchema)) {
+          props[pName] = { type: pType === "number" ? "number" : pType === "boolean" ? "boolean" : pType === "object" ? "object" : "string" };
+        }
+        props.dry_run = { type: "boolean", description: "If true, simulates without committing" };
+        dynamicActionTools.push({
+          name: `pgbox_action_${actName}`,
+          description: `Invoke stored business action pgb.${actName}(): ${actMeta.description || "Atomic PostgreSQL action."}`,
+          inputSchema: {
+            type: "object",
+            properties: props,
+          },
+        });
+      }
+    }
+  } catch {
+    // If endpoint is temporarily unreachable, fallback to standard tools
+  }
+
   return {
     tools: [
       {
@@ -131,6 +184,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["action"],
         },
       },
+      ...dynamicActionTools,
       {
         name: "pgbox_query_crud",
         description: "Execute safe parameterized SELECT, INSERT, UPDATE, DELETE, or COUNT operations on database tables.",
@@ -273,7 +327,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    if (name === "pgbox_action") {
+    if (name === "pgbox_action" || name.startsWith("pgbox_action_")) {
+      const actionName = name.startsWith("pgbox_action_") ? name.replace(/^pgbox_action_/, "") : (args?.action as string);
+      const isDynamic = name.startsWith("pgbox_action_");
+      const rawParams = isDynamic ? { ...args } : (args?.params as Record<string, unknown>) || {};
+      if (isDynamic) {
+        delete rawParams.dry_run;
+        delete rawParams.database;
+      }
+      const dryRun = Boolean(args?.dry_run);
+
       const url = `${PGBOX_ENDPOINT}/v1/actions/invoke`;
       const res = await fetch(url, {
         method: "POST",
@@ -282,9 +345,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ...authHeaders,
         },
         body: JSON.stringify({
-          action: args?.action,
-          params: args?.params || {},
-          dry_run: Boolean(args?.dry_run),
+          action: actionName,
+          params: rawParams,
+          dry_run: dryRun,
           dbname,
         }),
       });
