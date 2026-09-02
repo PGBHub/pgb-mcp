@@ -443,17 +443,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "pgbox_provision") {
-      const url = `${PGBOX_ENDPOINT}/databases`;
+      const dbName = String(args?.database_name || args?.name || "").trim().toLowerCase();
+      if (!dbName) {
+        throw new Error("database_name is required");
+      }
+      const url = `${PGBOX_ENDPOINT}/api/v1/databases`;
       const res = await fetch(url, {
         method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": "application/json",
+          Accept: "application/json",
           ...authHeaders,
         },
-        body: new URLSearchParams({ name: args?.database_name as string }).toString(),
+        body: JSON.stringify({ name: dbName }),
       });
+      const data = await res.json();
+      if (!res.ok || (data && data.success === false)) {
+        throw new Error((data && (data.error || data.detail)) || `Provisioning failed with HTTP ${res.status}`);
+      }
       return {
-        content: [{ type: "text", text: `Provision request sent for database: ${args?.database_name}` }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
       };
     }
 
