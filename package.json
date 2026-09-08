@@ -1,5 +1,5 @@
 {
-  "name": "@pgbox/mcp",
+  "name": "@pgb/mcp",
   "version": "1.0.0",
   "description": "Agent-Native Model Context Protocol (MCP) Server for PGBox Cloud",
   "main": "./dist/index.js",

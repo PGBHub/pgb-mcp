@@ -1,11 +1,34 @@
 #!/usr/bin/env node
+/**
+ * @pgb/mcp — Agent-Native Model Context Protocol (MCP) Server for PGBox Cloud
+ *
+ * Tools:
+ *   pgbox_help, pgbox_provision_project, pgbox_get_project_graph,
+ *   pgbox_execute_sql, pgbox_create_table, pgbox_query_crud,
+ *   pgbox_deploy_function, pgbox_deploy_container,
+ *   pgbox_configure_auth, pgbox_upload_asset, pgbox_send_mail
+ *
+ * Resources: pgbox://instructions, pgbox://cheatsheet, pgbox://project/graph
+ * Prompts:   bootstrap_fullstack_app, generate_feature_module
+ *
+ * Zero-config sandbox mode: if no PGBOX_API_KEY is provided, an ephemeral
+ * project is automatically provisioned and credentials returned inline.
+ */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLI argument parsing
+// ─────────────────────────────────────────────────────────────────────────────
 
 function parseCliArgs(): Record<string, string> {
   const args = process.argv.slice(2);
@@ -15,19 +38,12 @@ function parseCliArgs(): Record<string, string> {
     if (arg.startsWith("--")) {
       const key = arg.slice(2);
       const next = args[i + 1];
-      if (next && !next.startsWith("--")) {
-        options[key] = next;
-        i++;
-      } else {
-        options[key] = "true";
-      }
+      if (next && !next.startsWith("--")) { options[key] = next; i++; }
+      else { options[key] = "true"; }
     } else if (arg.startsWith("-")) {
       const key = arg.slice(1);
       const next = args[i + 1];
-      if (next && !next.startsWith("-")) {
-        options[key] = next;
-        i++;
-      }
+      if (next && !next.startsWith("-")) { options[key] = next; i++; }
     }
   }
   return options;
@@ -35,372 +51,637 @@ function parseCliArgs(): Record<string, string> {
 
 const cliArgs = parseCliArgs();
 
-// Extract database from CLI flags (--db or --database or parsed from --url)
-function extractDbFromArgs(): string {
-  if (cliArgs.db) return cliArgs.db;
-  if (cliArgs.database) return cliArgs.database;
-  if (cliArgs.d) return cliArgs.d;
-  if (cliArgs.url) {
-    try {
-      const parsed = new URL(cliArgs.url);
-      const dbPath = parsed.pathname.replace(/^\//, "");
-      if (dbPath) return dbPath;
-    } catch {
-      // url might not be a standard URL format
-    }
-  }
-  return process.env.PGBOX_DATABASE || "postgres";
-}
-
-// Extract endpoint from CLI flags or env
 function extractEndpoint(): string {
-  if (cliArgs.endpoint) return cliArgs.endpoint.replace(/\/$/, "");
-  if (cliArgs.e) return cliArgs.e.replace(/\/$/, "");
-  if (cliArgs.url) {
-    try {
-      if (cliArgs.url.startsWith("http://") || cliArgs.url.startsWith("https://")) {
-        return cliArgs.url.replace(/\/$/, "");
-      }
-      const parsed = new URL(cliArgs.url);
-      const host = parsed.hostname;
-      if (host && host !== "localhost" && host !== "127.0.0.1") {
-        const domain = host.startsWith("pg.") ? host.replace(/^pg\./, "pgbox.") : host;
-        return `https://${domain}`;
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return (process.env.PGBOX_ENDPOINT || "https://cloud.pgboxhub.com").replace(/\/$/, "");
+  const raw = cliArgs.endpoint || cliArgs.e || process.env.PGBOX_ENDPOINT || "https://cloud.pgboxhub.com";
+  return raw.replace(/\/$/, "");
 }
 
 const PGBOX_ENDPOINT = extractEndpoint();
-const PGBOX_API_KEY = cliArgs.key || cliArgs["api-key"] || cliArgs.k || process.env.PGBOX_API_KEY || "";
-const PGBOX_DATABASE = extractDbFromArgs();
+const PGBOX_API_KEY  = cliArgs.key || cliArgs["api-key"] || cliArgs.k || process.env.PGBOX_API_KEY || "";
+const PGBOX_PROJECT  = cliArgs.project || cliArgs.p || process.env.PGBOX_PROJECT_ID || "";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sandbox provisioning (zero-config mode)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SandboxContext {
+  projectId: string;
+  projectUrl: string;
+  apiKey: string;
+  claimUrl: string;
+  ephemeral: boolean;
+}
+
+let _sandboxCtx: SandboxContext | null = null;
+
+async function ensureSandbox(): Promise<SandboxContext> {
+  if (_sandboxCtx) return _sandboxCtx;
+  if (PGBOX_API_KEY && PGBOX_PROJECT) {
+    _sandboxCtx = {
+      projectId: PGBOX_PROJECT,
+      projectUrl: `https://${PGBOX_PROJECT}.pgbhub.dev`,
+      apiKey: PGBOX_API_KEY,
+      claimUrl: `${PGBOX_ENDPOINT}/claim/${PGBOX_PROJECT}`,
+      ephemeral: false,
+    };
+    return _sandboxCtx;
+  }
+  // Auto-provision ephemeral sandbox
+  const res = await fetch(`${PGBOX_ENDPOINT}/api/v1/sandbox/provision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ ephemeral: true }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Sandbox provisioning failed (HTTP ${res.status}): ${err}`);
+  }
+  const data = (await res.json()) as {
+    project_id: string;
+    api_key: string;
+    claim_url: string;
+  };
+  _sandboxCtx = {
+    projectId: data.project_id,
+    projectUrl: `https://${data.project_id}.pgbhub.dev`,
+    apiKey: data.api_key,
+    claimUrl: data.claim_url,
+    ephemeral: true,
+  };
+  return _sandboxCtx;
+}
+
+function authHeaders(apiKey: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+  };
+}
+
+async function apiGet(path: string, ctx: SandboxContext): Promise<unknown> {
+  const res = await fetch(`${PGBOX_ENDPOINT}${path}`, { headers: authHeaders(ctx.apiKey) });
+  return res.json();
+}
+
+async function apiPost(path: string, body: unknown, ctx: SandboxContext): Promise<unknown> {
+  const res = await fetch(`${PGBOX_ENDPOINT}${path}`, {
+    method: "POST",
+    headers: authHeaders(ctx.apiKey),
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+async function apiPatch(path: string, body: unknown, ctx: SandboxContext): Promise<unknown> {
+  const res = await fetch(`${PGBOX_ENDPOINT}${path}`, {
+    method: "PATCH",
+    headers: authHeaders(ctx.apiKey),
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Static content for resources
+// ─────────────────────────────────────────────────────────────────────────────
+
+const INSTRUCTIONS_TEXT = `# PGBox MCP Server — Instructions
+
+PGBox is a programmable backend for AI-native applications.
+
+## What you can do
+- **Provision** a full-stack backend (DB + auth + storage + mail + functions) in <5s
+- **Query** your PostgreSQL database with parameterized SQL or CRUD helpers
+- **Deploy** serverless functions (TypeScript/Python) and containerized apps
+- **Send** transactional email (100 free/mo, then $0.001/email)
+- **Manage** auth (signup, login, JWT, OTP, magic links — 5,000 free MAUs)
+- **Upload** assets to R2 / S3 storage (500 MB free storage pool)
+
+## Connection string
+Direct standard PostgreSQL: \`postgresql://user:pass@<projectId>.pgbhub.dev:5432/<dbname>\`
+Zero vendor lock-in — any standard Postgres client works.
+
+## Free tier summary
+| Resource | Free allowance |
+|---|---|
+| Databases | 1 (500 MB storage pool) |
+| Compute hours | 20 active hours/mo |
+| Auth MAUs | 5,000/mo |
+| Transactional emails | 100/mo |
+| Function invocations | 50,000/mo |
+
+## Docs
+https://docs.pgbhub.com
+`;
+
+const CHEATSHEET_TEXT = `# PGBox MCP Cheatsheet
+
+## 1. Provision a project
+\`\`\`
+pgbox_provision_project(name="myapp", region="eu-west-1")
+\`\`\`
+
+## 2. Execute SQL
+\`\`\`
+pgbox_execute_sql(sql="SELECT * FROM users WHERE id = $1", params=[42])
+\`\`\`
+
+## 3. CRUD helpers
+\`\`\`
+pgbox_query_crud(operation="insert", table="orders", data={"user_id": 1, "amount": 99.99})
+pgbox_query_crud(operation="find",   table="orders", filter={"user_id": 1}, limit=20)
+\`\`\`
+
+## 4. Create a table
+\`\`\`
+pgbox_create_table(table_name="products", columns=[
+  { name: "id",    type: "bigserial", primary_key: true },
+  { name: "name",  type: "text",      nullable: false },
+  { name: "price", type: "numeric(10,2)" }
+])
+\`\`\`
+
+## 5. Deploy a function
+\`\`\`
+pgbox_deploy_function(module_name="checkout", code="export async function POST(req, ctx) { ... }")
+\`\`\`
+
+## 6. Deploy a container
+\`\`\`
+pgbox_deploy_container(image="ghcr.io/myorg/myapp:latest", tier="standard", min_replicas=1, max_replicas=5)
+\`\`\`
+
+## 7. Send mail
+\`\`\`
+pgbox_send_mail(to="user@example.com", subject="Welcome!", text="Thanks for signing up.")
+\`\`\`
+
+## 8. Configure auth
+\`\`\`
+pgbox_configure_auth(enable_magic_links=true, enable_otp=true, jwt_expiry_hours=24)
+\`\`\`
+
+## 9. Upload asset
+\`\`\`
+pgbox_upload_asset(file_path="assets/logo.png", content_type="image/png")
+\`\`\`
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MCP Server
+// ─────────────────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  {
-    name: "pgbox-mcp",
-    version: "1.0.0",
-  },
+  { name: "@pgb/mcp", version: "2.0.0" },
   {
     capabilities: {
       tools: {},
+      resources: {},
+      prompts: {},
     },
   }
 );
 
-// Register MCP Tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  const authHeaders: Record<string, string> = {
-    Accept: "application/json",
-    ...(PGBOX_API_KEY ? { Authorization: `Bearer ${PGBOX_API_KEY}` } : {}),
-  };
+// ─── LIST TOOLS ───────────────────────────────────────────────────────────────
 
-  const dynamicActionTools: Array<{
-    name: string;
-    description: string;
-    inputSchema: { type: string; properties: Record<string, unknown>; required?: string[] };
-  }> = [];
-
-  try {
-    const url = `${PGBOX_ENDPOINT}/api/v1/databases/${encodeURIComponent(PGBOX_DATABASE)}/schema.json`;
-    const res = await fetch(url, { headers: authHeaders, signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const data = (await res.json()) as { actions?: Record<string, { description?: string; input_schema?: Record<string, string>; sample_params?: Record<string, unknown> }> };
-      const actions = data?.actions || {};
-      for (const [actName, actMeta] of Object.entries(actions)) {
-        const props: Record<string, unknown> = {};
-        const inSchema = actMeta.input_schema || {};
-        for (const [pName, pType] of Object.entries(inSchema)) {
-          props[pName] = { type: pType === "number" ? "number" : pType === "boolean" ? "boolean" : pType === "object" ? "object" : "string" };
-        }
-        props.dry_run = { type: "boolean", description: "If true, simulates without committing" };
-        dynamicActionTools.push({
-          name: `pgbox_action_${actName}`,
-          description: `Invoke stored business action pgb.${actName}(): ${actMeta.description || "Atomic PostgreSQL action."}`,
-          inputSchema: {
-            type: "object",
-            properties: props,
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: "pgbox_help",
+      description: "Get comprehensive help and workflow guidance for PGBox. Covers provisioning, SQL, functions, containers, auth, storage, and mail. Start here if you're unsure what to do.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          topic: {
+            type: "string",
+            enum: ["overview", "sql", "functions", "containers", "auth", "storage", "mail", "billing", "cli"],
+            description: "Specific topic to get help on (optional; defaults to overview)",
           },
-        });
-      }
-    }
-  } catch {
-    // If endpoint is temporarily unreachable, fallback to standard tools
+        },
+      },
+    },
+    {
+      name: "pgbox_provision_project",
+      description: "Provision a full-stack backend (PostgreSQL DB, auth, storage, mail, serverless functions) in under 5 seconds. If no API key is configured, an ephemeral sandbox project is automatically provisioned.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Project name slug (lowercase, alphanumeric, hyphens). e.g. 'my-app'" },
+          region: { type: "string", description: "Deployment region (e.g. eu-west-1, us-east-1). Defaults to eu-west-1." },
+          ephemeral: { type: "boolean", description: "If true, provisions a temporary sandbox (auto-claimed by user). Default: false" },
+        },
+        required: ["name"],
+      },
+    },
+    {
+      name: "pgbox_get_project_graph",
+      description: "Retrieve the complete machine-readable project topology graph: database schema, tables, functions, containers, auth config, storage usage, and mail reputation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
+        },
+      },
+    },
+    {
+      name: "pgbox_execute_sql",
+      description: "Execute a parameterized SQL query against the project PostgreSQL database. Use $1, $2, ... placeholders. Dangerous DDL (DROP DATABASE, ALTER SYSTEM) is blocked.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          sql: { type: "string", description: "Parameterized SQL query (e.g. SELECT * FROM users WHERE id = $1)" },
+          params: {
+            type: "array",
+            items: {},
+            description: "Ordered array of parameter values matching $1, $2, ... placeholders",
+          },
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
+          timeout_ms: { type: "number", description: "Statement timeout in milliseconds (default: 5000, max: 30000)" },
+        },
+        required: ["sql"],
+      },
+    },
+    {
+      name: "pgbox_create_table",
+      description: "Create a new relational table with typed columns and primary keys in the project database. DROP operations are fully blocked by guardrails.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          table_name: { type: "string", description: "Name of the table to create (snake_case recommended)" },
+          columns: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name:        { type: "string" },
+                type:        { type: "string", description: "PostgreSQL type: text, bigserial, numeric, jsonb, timestamptz, boolean, uuid, etc." },
+                primary_key: { type: "boolean" },
+                nullable:    { type: "boolean" },
+                default:     { type: "string", description: "SQL default expression (e.g. NOW(), gen_random_uuid())" },
+              },
+              required: ["name", "type"],
+            },
+            description: "List of column definitions",
+          },
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
+        },
+        required: ["table_name", "columns"],
+      },
+    },
+    {
+      name: "pgbox_query_crud",
+      description: "Execute safe parameterized SELECT, INSERT, UPDATE, DELETE, or COUNT operations on database tables without writing raw SQL.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          operation: {
+            type: "string",
+            enum: ["find", "insert", "update", "delete", "count"],
+            description: "CRUD operation to perform",
+          },
+          table:    { type: "string", description: "Target table name" },
+          data:     { type: "object", description: "Row data for insert or update" },
+          filter:   { type: "object", description: "Key-value filter criteria (e.g. { id: 42 })" },
+          limit:    { type: "number", description: "Max rows to return (default: 100)" },
+          offset:   { type: "number", description: "Rows to skip (for pagination)" },
+          order_by: { type: "string", description: "Column to order by" },
+          order:    { type: "string", enum: ["ASC", "DESC"], description: "Sort direction (default: ASC)" },
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
+        },
+        required: ["operation", "table"],
+      },
+    },
+    {
+      name: "pgbox_deploy_function",
+      description: "Deploy or update a serverless function module. Supports TypeScript (Hono-style multi-endpoint named exports: GET, POST, PUT, DELETE). Receives ambient context: { db, user, storage, email, secrets }.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          module_name: { type: "string", description: "Function module name (e.g. 'checkout', 'webhooks'). Accessible at /<module_name>/*" },
+          code: { type: "string", description: "Full TypeScript/JavaScript source code of the function module" },
+          runtime: { type: "string", enum: ["typescript", "python"], description: "Runtime (default: typescript)" },
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
+        },
+        required: ["module_name", "code"],
+      },
+    },
+    {
+      name: "pgbox_deploy_container",
+      description: "Deploy a containerized application with auto-scaling, scale-to-zero, and timezone-aware scheduled windows. Requires a verified payment card for >1 replica or Standard+ tiers.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          image: { type: "string", description: "Container image reference (e.g. ghcr.io/myorg/myapp:latest or a Dockerfile path)" },
+          tier: {
+            type: "string",
+            enum: ["micro", "standard", "performance", "enterprise"],
+            description: "Compute tier (default: micro). Micro is free on scale-to-zero.",
+          },
+          min_replicas: { type: "number", description: "Minimum replicas (0 = scale-to-zero, requires free tier or payment card for ≥1)" },
+          max_replicas: { type: "number", description: "Maximum replicas for auto-scaling (max: 20, default: 1)" },
+          schedule: {
+            type: "string",
+            description: "Timezone-aware always-on window (e.g. '09:00-18:00 Europe/London'). Outside window: scale-to-zero.",
+          },
+          env: { type: "object", description: "Environment variables to inject into the container" },
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
+        },
+        required: ["image"],
+      },
+    },
+    {
+      name: "pgbox_configure_auth",
+      description: "Configure built-in PGB Auth settings for the project. Enables signup/login, magic links, OTP, JWT expiry, and custom OAuth providers. Free for up to 5,000 MAUs/month.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          enable_email_signup:  { type: "boolean", description: "Allow users to sign up with email/password (default: true)" },
+          enable_magic_links:   { type: "boolean", description: "Enable passwordless magic link sign-in" },
+          enable_otp:           { type: "boolean", description: "Enable one-time password (OTP) sign-in" },
+          jwt_expiry_hours:     { type: "number",  description: "JWT access token expiry in hours (default: 1)" },
+          refresh_expiry_days:  { type: "number",  description: "Refresh token expiry in days (default: 30)" },
+          allowed_email_domains: {
+            type: "array",
+            items: { type: "string" },
+            description: "Restrict sign-up to specific email domains (e.g. ['company.com']). Empty = allow all.",
+          },
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
+        },
+      },
+    },
+    {
+      name: "pgbox_upload_asset",
+      description: "Generate a presigned upload URL for a file to project R2/S3 storage, with public CDN caching. 500 MB free storage pool per account.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          file_path:    { type: "string", description: "Destination path within the project storage bucket (e.g. 'avatars/user-123.png')" },
+          content_type: { type: "string", description: "MIME type of the file (e.g. 'image/png', 'application/pdf')" },
+          public:       { type: "boolean", description: "Make file publicly accessible via CDN (default: false)" },
+          project_id:   { type: "string", description: "Project ID (defaults to configured project)" },
+        },
+        required: ["file_path", "content_type"],
+      },
+    },
+    {
+      name: "pgbox_send_mail",
+      description: "Send a transactional email via PGBox managed SES (noreply@mail.pgbhub.dev) or custom BYO SMTP. 100 free emails/month; $0.001/email thereafter. Subject to velocity and reputation limits.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          to:         { type: "string", description: "Recipient email address" },
+          subject:    { type: "string", description: "Email subject line" },
+          text:       { type: "string", description: "Plain-text email body" },
+          html:       { type: "string", description: "Optional HTML email body" },
+          reply_to:   { type: "string", description: "Optional reply-to email address" },
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
+        },
+        required: ["to", "subject", "text"],
+      },
+    },
+  ],
+}));
+
+// ─── LIST RESOURCES ───────────────────────────────────────────────────────────
+
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+  resources: [
+    {
+      uri: "pgbox://instructions",
+      name: "PGBox Instructions",
+      description: "Complete guide to using PGBox: free tier limits, connection strings, and platform overview.",
+      mimeType: "text/markdown",
+    },
+    {
+      uri: "pgbox://cheatsheet",
+      name: "PGBox Cheatsheet",
+      description: "Quick-reference examples for all major PGBox operations.",
+      mimeType: "text/markdown",
+    },
+    {
+      uri: "pgbox://project/graph",
+      name: "Project Graph",
+      description: "Live machine-readable topology of the current project (schema, functions, containers, auth, storage).",
+      mimeType: "application/json",
+    },
+  ],
+}));
+
+// ─── READ RESOURCE ────────────────────────────────────────────────────────────
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const { uri } = request.params;
+
+  if (uri === "pgbox://instructions") {
+    return { contents: [{ uri, mimeType: "text/markdown", text: INSTRUCTIONS_TEXT }] };
   }
 
-  return {
-    tools: [
-      {
-        name: "pgbox_inspect",
-        description: "Fetch semantic machine-readable /schema.json metadata (tables, columns, primary keys, foreign keys, action contracts) for the active database.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            database: {
-              type: "string",
-              description: `Target database name (default: ${PGBOX_DATABASE})`,
-            },
-          },
-        },
-      },
-      {
-        name: "pgbox_list_actions",
-        description: "List all registered transactional business actions available on the PGBox database, including their parameter schemas, descriptions, and sample payloads.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            database: {
-              type: "string",
-              description: `Target database name (default: ${PGBOX_DATABASE})`,
-            },
-          },
-        },
-      },
-      {
-        name: "pgbox_action",
-        description: "Execute or simulate a registered business action on the PGBox database inside an atomic transaction.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            action: {
-              type: "string",
-              description: "Name of the registered action (e.g. saveUser, approveOrder, transferFunds)",
-            },
-            params: {
-              type: "object",
-              description: "Parameters object required by the action template",
-            },
-            dry_run: {
-              type: "boolean",
-              description: "If true, simulates the action inside an atomic transaction and rolls back changes without committing",
-            },
-            database: {
-              type: "string",
-              description: `Target database name (default: ${PGBOX_DATABASE})`,
-            },
-          },
-          required: ["action"],
-        },
-      },
-      ...dynamicActionTools,
-      {
-        name: "pgbox_query_crud",
-        description: "Execute safe parameterized SELECT, INSERT, UPDATE, DELETE, or COUNT operations on database tables.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            operation: {
-              type: "string",
-              enum: ["find", "insert", "update", "delete", "count"],
-              description: "CRUD operation to perform",
-            },
-            table: {
-              type: "string",
-              description: "Target table name (e.g. users, orders)",
-            },
-            data: {
-              type: "object",
-              description: "Row data for insert or update operations",
-            },
-            filter: {
-              type: "object",
-              description: "Key-value filter criteria for find, update, delete, or count operations",
-            },
-            limit: {
-              type: "number",
-              description: "Maximum number of rows to return (default: 100)",
-            },
-            offset: {
-              type: "number",
-              description: "Number of rows to skip",
-            },
-            orderBy: {
-              type: "string",
-              description: "Column name to order results by",
-            },
-            order: {
-              type: "string",
-              enum: ["ASC", "DESC"],
-              description: "Order direction (default: ASC)",
-            },
-            database: {
-              type: "string",
-              description: `Target database name (default: ${PGBOX_DATABASE})`,
-            },
-          },
-          required: ["operation", "table"],
-        },
-      },
-      {
-        name: "pgbox_create_table",
-        description: "Create a new relational table or JSONB collection with typed columns and primary keys. Destructive drops are blocked by agent guardrails.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            table_name: {
-              type: "string",
-              description: "Name of the table to create",
-            },
-            columns: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  type: { type: "string", description: "PostgreSQL type (e.g. serial, text, numeric, jsonb, timestamptz, boolean)" },
-                  primary_key: { type: "boolean" },
-                  nullable: { type: "boolean" },
-                  default: { type: "string" },
-                },
-                required: ["name", "type"],
-              },
-              description: "List of columns to define for the table",
-            },
-            database: {
-              type: "string",
-              description: `Target database name (default: ${PGBOX_DATABASE})`,
-            },
-          },
-          required: ["table_name", "columns"],
-        },
-      },
-      {
-        name: "pgbox_provision",
-        description: "Provision an isolated, serverless PostgreSQL database with dedicated credentials in under 30 seconds.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            database_name: {
-              type: "string",
-              description: "Name for the new database (lowercase alphanumeric)",
-            },
-          },
-          required: ["database_name"],
-        },
-      },
-    ],
-  };
+  if (uri === "pgbox://cheatsheet") {
+    return { contents: [{ uri, mimeType: "text/markdown", text: CHEATSHEET_TEXT }] };
+  }
+
+  if (uri === "pgbox://project/graph") {
+    try {
+      const ctx = await ensureSandbox();
+      const data = await apiGet(`/api/v1/projects/${ctx.projectId}`, ctx);
+      return {
+        contents: [{ uri, mimeType: "application/json", text: JSON.stringify(data, null, 2) }],
+      };
+    } catch (err) {
+      return {
+        contents: [{
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({ error: (err as Error).message }),
+        }],
+      };
+    }
+  }
+
+  throw new Error(`Unknown resource URI: ${uri}`);
 });
 
-// Handle Tool Executions
+// ─── LIST PROMPTS ─────────────────────────────────────────────────────────────
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  prompts: [
+    {
+      name: "bootstrap_fullstack_app",
+      description: "Generate a complete starter plan and code scaffold for a full-stack app on PGBox: database schema, auth, API functions, container deployment, and mail configuration.",
+      arguments: [
+        { name: "app_description", description: "Brief description of the app (e.g. 'SaaS invoice management tool')", required: true },
+        { name: "tech_stack",      description: "Frontend tech (e.g. Next.js, React, Vue). Default: Next.js", required: false },
+      ],
+    },
+    {
+      name: "generate_feature_module",
+      description: "Generate a complete PGBox serverless function module for a specific feature, including typed request/response handlers, DB queries, and ambient context usage.",
+      arguments: [
+        { name: "feature_name",   description: "Feature name (e.g. 'checkout', 'user-profile', 'notifications')", required: true },
+        { name: "http_methods",   description: "Comma-separated HTTP methods to implement (e.g. 'GET,POST'). Default: GET,POST", required: false },
+        { name: "db_tables",      description: "Comma-separated list of DB tables this feature interacts with", required: false },
+      ],
+    },
+  ],
+}));
+
+// ─── GET PROMPT ───────────────────────────────────────────────────────────────
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: promptArgs } = request.params;
+
+  if (name === "bootstrap_fullstack_app") {
+    const desc = (promptArgs?.app_description as string) || "a full-stack web application";
+    const stack = (promptArgs?.tech_stack as string) || "Next.js";
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `I want to build ${desc} using ${stack} on the frontend and PGBox as the backend.
+
+Please:
+1. Use \`pgbox_provision_project\` to create the project
+2. Use \`pgbox_create_table\` to design the database schema (suggest appropriate tables with proper types)
+3. Use \`pgbox_configure_auth\` to configure authentication
+4. Use \`pgbox_deploy_function\` to create the core API function modules
+5. Provide a complete \`pgb.config.json\` and \`.env.example\`
+6. Show how to initialize the \`@pgb/sdk\` client in ${stack}
+
+Return a complete, production-ready starter scaffold.`,
+          },
+        },
+      ],
+    };
+  }
+
+  if (name === "generate_feature_module") {
+    const feature = (promptArgs?.feature_name as string) || "feature";
+    const methods = (promptArgs?.http_methods as string) || "GET,POST";
+    const tables  = (promptArgs?.db_tables as string) || "";
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Generate a complete PGBox serverless function module for the "${feature}" feature.
+
+Requirements:
+- HTTP methods to implement: ${methods}
+- Database tables used: ${tables || "(determine appropriate tables)"}
+- Use Hono-style named exports: \`export async function GET(req, ctx) {...}\`
+- Use ambient context: \`ctx.db\`, \`ctx.user\`, \`ctx.storage\`, \`ctx.email\`, \`ctx.secrets\`
+- Include input validation, error handling, and TypeScript types
+- Add JSDoc comments
+
+Then deploy it with \`pgbox_deploy_function\`.`,
+          },
+        },
+      ],
+    };
+  }
+
+  throw new Error(`Unknown prompt: ${name}`);
+});
+
+// ─── CALL TOOL ────────────────────────────────────────────────────────────────
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  const dbname = (args?.database as string) || PGBOX_DATABASE;
 
-  const authHeaders: Record<string, string> = {
-    Accept: "application/json",
-    ...(PGBOX_API_KEY ? { Authorization: `Bearer ${PGBOX_API_KEY}` } : {}),
-  };
+  function ok(data: unknown): { content: Array<{ type: "text"; text: string }> } {
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+
+  function err(msg: string): { content: Array<{ type: "text"; text: string }>; isError: boolean } {
+    return { content: [{ type: "text", text: `Error: ${msg}` }], isError: true };
+  }
 
   try {
-    if (name === "pgbox_inspect") {
-      const url = `${PGBOX_ENDPOINT}/api/v1/databases/${encodeURIComponent(dbname)}/schema.json`;
-      const res = await fetch(url, { headers: authHeaders });
-      const data = await res.json();
-      return {
-        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+    // ── pgbox_help ──────────────────────────────────────────────────────────
+    if (name === "pgbox_help") {
+      const topic = (args?.topic as string) || "overview";
+      const topicContent: Record<string, string> = {
+        overview:   INSTRUCTIONS_TEXT,
+        sql:        "## SQL Execution\n\nUse `pgbox_execute_sql` with parameterized queries ($1, $2, ...) or `pgbox_query_crud` for typed CRUD operations without writing SQL.\n\nStatement timeout: 5s (configurable up to 30s).\nMemory cap: 16 MB work_mem per query.\nBlocked: DROP DATABASE, ALTER SYSTEM, and raw DDL concatenation.",
+        functions:  "## Serverless Functions\n\nDeploy TypeScript modules with `pgbox_deploy_function`. Each module handles a sub-path:\n- `functions/checkout.ts` → `/<projectId>.pgbhub.dev/checkout/*`\n- Named exports: GET, POST, PUT, DELETE\n- Ambient context: `{ db, user, storage, email, secrets, params, query }`\n- Cold start: <25ms via CRIU memory snapshot restore",
+        containers: "## Containers\n\nDeploy Docker images with `pgbox_deploy_container`. Features:\n- Scale-to-zero (0 MB RAM when idle, <25ms cold start via CRIU)\n- Timezone-aware scheduled windows (e.g. 09:00–18:00 Europe/London)\n- Auto-scaling: 1–20 replicas based on concurrency\n- Payment card required for >1 replica or Standard+ tier\n- Egress: SMTP ports 25/465/587 blocked by default on free tier",
+        auth:       "## Auth as a Service\n\nBuilt-in auth routes at `/<projectId>.pgbhub.dev/auth/*`:\n- POST /auth/signup, /auth/login, /auth/verify\n- POST /auth/magic (magic link), /auth/otp\n- GET  /auth/user (current user)\nFree for up to 5,000 MAUs/month. JWT tokens with Argon2id password hashing.",
+        storage:    "## R2/S3 Storage\n\nGet presigned upload URLs via `pgbox_upload_asset`. Features:\n- 500 MB free storage pool per account\n- Project-prefix partitioning: projects/<projectId>/<filePath>\n- Public CDN caching: Cache-Control: public, max-age=31536000\n- 15-minute presigned URL TTL",
+        mail:       "## Transactional Mail\n\nSend email via `pgbox_send_mail`. Features:\n- 100 free emails/month via managed AWS SES (noreply@mail.pgbhub.dev)\n- BYO SMTP/domain: $0.00 platform fee\n- Overage: $0.001/email with verified payment card\n- Velocity limit: 5 emails/minute on free tier\n- Reputation quarantine: 2.5% bounce rate or 0.08% complaint rate threshold",
+        billing:    "## Billing & Pricing\n\nDual-axis invoicing: by Resource Type AND by Project.\n\n| Resource | Free | Paid |\n|---|---|---|\n| DB compute | 20 hours/mo | $0.014–$0.250/hr |\n| Storage | 500 MB | $0.20/GB/mo |\n| Auth MAUs | 5,000/mo | $0.002/MAU |\n| Emails | 100/mo | $0.001/email |\n| Backups | Manual only | $1/mo (<500MB), $5/mo (500MB–5GB) |\n| Containers | Micro scale-to-zero | $0.03–$0.25/hr |\n\n$5.00 minimum billing threshold.",
+        cli:        "## Local CLI\n\n```bash\nnpx pgb login\nnpx pgb init my-app\nnpx pgb dev        # local simulator on port 4000\n```\n\nProject structure:\n```\nfunctions/          # serverless function modules\ncontainers/         # Dockerfile(s)\ncron/               # scheduled jobs\nmigrations/         # SQL migration files\npgb.config.json     # project config\n.env.example        # env variable template\n```",
       };
+      return ok({ topic, content: topicContent[topic] || INSTRUCTIONS_TEXT });
     }
 
-    if (name === "pgbox_list_actions") {
-      const url = `${PGBOX_ENDPOINT}/api/v1/databases/${encodeURIComponent(dbname)}/schema.json`;
-      const res = await fetch(url, { headers: authHeaders });
-      const data = (await res.json()) as { actions?: Record<string, unknown> };
-      const actions = data?.actions || {};
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                database: dbname,
-                count: Object.keys(actions).length,
-                actions,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      };
-    }
+    // ── pgbox_provision_project ─────────────────────────────────────────────
+    if (name === "pgbox_provision_project") {
+      const projName = String(args?.name || "").trim().toLowerCase();
+      const region   = String(args?.region || "eu-west-1");
+      const ephemeral = Boolean(args?.ephemeral ?? false);
 
-    if (name === "pgbox_action" || name.startsWith("pgbox_action_")) {
-      const actionName = name.startsWith("pgbox_action_") ? name.replace(/^pgbox_action_/, "") : (args?.action as string);
-      const isDynamic = name.startsWith("pgbox_action_");
-      const rawParams = isDynamic ? { ...args } : (args?.params as Record<string, unknown>) || {};
-      if (isDynamic) {
-        delete rawParams.dry_run;
-        delete rawParams.database;
-      }
-      const dryRun = Boolean(args?.dry_run);
-
-      const url = `${PGBOX_ENDPOINT}/v1/actions/invoke`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({
-          action: actionName,
-          params: rawParams,
-          dry_run: dryRun,
-          dbname,
-        }),
-      });
-      const data = await res.json();
-      return {
-        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
-      };
-    }
-
-    if (name === "pgbox_query_crud") {
-      const op = String(args?.operation || "find").toLowerCase();
-      const endpointMap: Record<string, string> = {
-        find: "/v1/data/find",
-        insert: "/v1/data/insert",
-        update: "/v1/data/update",
-        delete: "/v1/data/delete",
-        count: "/v1/data/count",
-      };
-
-      const path = endpointMap[op];
-      if (!path) {
-        throw new Error(`Unsupported CRUD operation '${op}'. Supported: find, insert, update, delete, count.`);
+      // If no API key configured, auto-provision sandbox instead
+      if (!PGBOX_API_KEY && !ephemeral) {
+        const ctx = await ensureSandbox();
+        return ok({
+          message: "Ephemeral sandbox project auto-provisioned (no API key configured).",
+          ...ctx,
+          instructions: `Claim your project at: ${ctx.claimUrl}`,
+        });
       }
 
-      const url = `${PGBOX_ENDPOINT}${path}`;
-      const res = await fetch(url, {
+      const headers = authHeaders(PGBOX_API_KEY);
+      const res = await fetch(`${PGBOX_ENDPOINT}/api/v1/projects`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({
-          table: args?.table,
-          data: args?.data,
-          filter: args?.filter,
-          limit: args?.limit,
-          offset: args?.offset,
-          orderBy: args?.orderBy,
-          order: args?.order,
-          dbname,
-        }),
+        headers,
+        body: JSON.stringify({ name: projName, region, ephemeral }),
       });
-      const data = await res.json();
-      return {
-        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
-      };
+      const data = (await res.json()) as Record<string, unknown>;
+      if (!res.ok) throw new Error((data?.error as string) || `HTTP ${res.status}`);
+
+      const projectId  = data.id as string;
+      const projectUrl = `https://${projectId}.pgbhub.dev`;
+      return ok({
+        ...data,
+        project_url: projectUrl,
+        postgres_connection_string: `postgresql://<user>:<password>@${projectId}.pgbhub.dev:5432/${projName}`,
+        sdk_init: `import { createClient } from '@pgb/sdk';\nconst pgb = createClient('${projectUrl}', { key: process.env.PGB_SECRET_KEY });`,
+      });
     }
 
+    // ── pgbox_get_project_graph ─────────────────────────────────────────────
+    if (name === "pgbox_get_project_graph") {
+      const ctx = await ensureSandbox();
+      const pid = (args?.project_id as string) || ctx.projectId;
+      const data = await apiGet(`/api/v1/projects/${pid}`, ctx);
+      return ok(data);
+    }
+
+    // ── pgbox_execute_sql ───────────────────────────────────────────────────
+    if (name === "pgbox_execute_sql") {
+      const ctx = await ensureSandbox();
+      const pid = (args?.project_id as string) || ctx.projectId;
+      const sql = String(args?.sql || "").trim();
+      if (!sql) throw new Error("sql is required");
+      const params     = (args?.params as unknown[]) || [];
+      const timeout_ms = Number(args?.timeout_ms ?? 5000);
+      const data = await apiPost(`/api/v1/projects/${pid}/sql`, { sql, params, timeout_ms }, ctx);
+      return ok(data);
+    }
+
+    // ── pgbox_create_table ──────────────────────────────────────────────────
     if (name === "pgbox_create_table") {
+      const ctx = await ensureSandbox();
+      const pid = (args?.project_id as string) || ctx.projectId;
       const tableName = String(args?.table_name || "").trim();
-      const columns = (args?.columns as Array<{ name: string; type: string; primary_key?: boolean; nullable?: boolean; default?: string }>) || [];
-
       if (!tableName) throw new Error("table_name is required");
+      const columns = (args?.columns as Array<{
+        name: string; type: string; primary_key?: boolean; nullable?: boolean; default?: string;
+      }>) || [];
       if (!columns.length) throw new Error("columns list cannot be empty");
 
       const colDefs = columns.map((c) => {
@@ -410,84 +691,149 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (c.default) def += ` DEFAULT ${c.default}`;
         return def;
       });
-
       const ddl = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n  ${colDefs.join(",\n  ")}\n);`;
 
-      const url = `${PGBOX_ENDPOINT}/databases/${encodeURIComponent(dbname)}/actions/create-missing-table`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({ ddl }),
-      });
-      const data = await res.json();
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                success: data.success || false,
-                table: tableName,
-                ddl,
-                message: data.message || "Table created successfully.",
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      };
+      const data = await apiPost(`/api/v1/projects/${pid}/sql`, {
+        sql: ddl,
+        params: [],
+        timeout_ms: 10000,
+      }, ctx);
+      return ok({ success: true, table: tableName, ddl, result: data });
     }
 
-    if (name === "pgbox_provision") {
-      const dbName = String(args?.database_name || args?.name || "").trim().toLowerCase();
-      if (!dbName) {
-        throw new Error("database_name is required");
-      }
-      const url = `${PGBOX_ENDPOINT}/api/v1/databases`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({ name: dbName }),
+    // ── pgbox_query_crud ────────────────────────────────────────────────────
+    if (name === "pgbox_query_crud") {
+      const ctx = await ensureSandbox();
+      const pid = (args?.project_id as string) || ctx.projectId;
+      const op    = String(args?.operation || "find").toLowerCase();
+      const table = String(args?.table || "").trim();
+      if (!table) throw new Error("table is required");
+
+      const allowed = ["find", "insert", "update", "delete", "count"];
+      if (!allowed.includes(op)) throw new Error(`Invalid operation '${op}'. Allowed: ${allowed.join(", ")}`);
+
+      const data = await apiPost(`/api/v1/projects/${pid}/crud`, {
+        operation: op,
+        table,
+        data:     args?.data,
+        filter:   args?.filter,
+        limit:    args?.limit   ?? 100,
+        offset:   args?.offset  ?? 0,
+        order_by: args?.order_by,
+        order:    args?.order   ?? "ASC",
+      }, ctx);
+      return ok(data);
+    }
+
+    // ── pgbox_deploy_function ───────────────────────────────────────────────
+    if (name === "pgbox_deploy_function") {
+      const ctx = await ensureSandbox();
+      const pid = (args?.project_id as string) || ctx.projectId;
+      const moduleName = String(args?.module_name || "").trim();
+      const code       = String(args?.code || "").trim();
+      const runtime    = String(args?.runtime || "typescript");
+      if (!moduleName) throw new Error("module_name is required");
+      if (!code)       throw new Error("code is required");
+
+      const data = await apiPost(`/api/v1/projects/${pid}/functions/deploy`, {
+        module_name: moduleName,
+        code,
+        runtime,
+      }, ctx);
+      return ok({
+        ...((data as Record<string, unknown>) || {}),
+        endpoint: `https://${ctx.projectId}.pgbhub.dev/${moduleName}`,
       });
-      const data = await res.json();
-      if (!res.ok || (data && data.success === false)) {
-        throw new Error((data && (data.error || data.detail)) || `Provisioning failed with HTTP ${res.status}`);
-      }
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(data, null, 2),
-          },
-        ],
-      };
+    }
+
+    // ── pgbox_deploy_container ──────────────────────────────────────────────
+    if (name === "pgbox_deploy_container") {
+      const ctx = await ensureSandbox();
+      const pid = (args?.project_id as string) || ctx.projectId;
+      const image        = String(args?.image || "").trim();
+      const tier         = String(args?.tier || "micro");
+      const min_replicas = Number(args?.min_replicas ?? 0);
+      const max_replicas = Number(args?.max_replicas ?? 1);
+      const schedule     = args?.schedule as string | undefined;
+      const env          = (args?.env as Record<string, string>) || {};
+      if (!image) throw new Error("image is required");
+
+      const data = await apiPost(`/api/v1/projects/${pid}/containers/deploy`, {
+        image, tier, min_replicas, max_replicas, schedule, env,
+      }, ctx);
+      return ok(data);
+    }
+
+    // ── pgbox_configure_auth ────────────────────────────────────────────────
+    if (name === "pgbox_configure_auth") {
+      const ctx = await ensureSandbox();
+      const pid = (args?.project_id as string) || ctx.projectId;
+      const data = await apiPatch(`/api/v1/projects/${pid}/auth/config`, {
+        enable_email_signup:   args?.enable_email_signup,
+        enable_magic_links:    args?.enable_magic_links,
+        enable_otp:            args?.enable_otp,
+        jwt_expiry_hours:      args?.jwt_expiry_hours,
+        refresh_expiry_days:   args?.refresh_expiry_days,
+        allowed_email_domains: args?.allowed_email_domains,
+      }, ctx);
+      return ok(data);
+    }
+
+    // ── pgbox_upload_asset ──────────────────────────────────────────────────
+    if (name === "pgbox_upload_asset") {
+      const ctx = await ensureSandbox();
+      const pid          = (args?.project_id as string) || ctx.projectId;
+      const file_path    = String(args?.file_path || "").trim();
+      const content_type = String(args?.content_type || "application/octet-stream");
+      const isPublic     = Boolean(args?.public ?? false);
+      if (!file_path) throw new Error("file_path is required");
+
+      const data = await apiPost(`/api/v1/projects/${pid}/storage/upload-url`, {
+        path:         `projects/${pid}/${file_path}`,
+        content_type,
+        public:       isPublic,
+        ttl_seconds:  900,
+      }, ctx);
+      return ok(data);
+    }
+
+    // ── pgbox_send_mail ─────────────────────────────────────────────────────
+    if (name === "pgbox_send_mail") {
+      const ctx = await ensureSandbox();
+      const pid = (args?.project_id as string) || ctx.projectId;
+      const to      = String(args?.to || "").trim();
+      const subject = String(args?.subject || "").trim();
+      const text    = String(args?.text || "").trim();
+      if (!to)      throw new Error("to is required");
+      if (!subject) throw new Error("subject is required");
+      if (!text)    throw new Error("text is required");
+
+      const data = await apiPost(`/api/v1/projects/${pid}/mail/send`, {
+        to, subject, text,
+        html:     args?.html,
+        reply_to: args?.reply_to,
+      }, ctx);
+      return ok(data);
     }
 
     throw new Error(`Unknown tool: ${name}`);
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
-      isError: true,
-    };
+    return err((error as Error).message);
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entry point
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function run() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`PGBox MCP Server running on stdio (database: ${PGBOX_DATABASE}, endpoint: ${PGBOX_ENDPOINT})`);
+  const mode = PGBOX_API_KEY ? "authenticated" : "zero-config sandbox";
+  console.error(`@pgb/mcp v2.0.0 running (mode: ${mode}, endpoint: ${PGBOX_ENDPOINT})`);
 }
 
 run().catch((err) => {
   console.error("Fatal MCP error:", err);
   process.exit(1);
 });
-
