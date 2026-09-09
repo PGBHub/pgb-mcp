@@ -55,7 +55,7 @@ Add to your `.cursor/mcp.json`, `claude_desktop_config.json`, or Antigravity set
         "--db",
         "lokl",
         "--url",
-        "postgresql://lokl_app:SECRET@pg.motoriqhub.com:5433/lokl?sslmode=require"
+        "postgresql://lokl_app:SECRET@db.pgbhub.app:5433/lokl?sslmode=require"
       ]
     }
   }
