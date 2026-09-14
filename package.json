@@ -1,10 +1,10 @@
 {
   "name": "@pgb/mcp",
   "version": "1.0.0",
-  "description": "Agent-Native Model Context Protocol (MCP) Server for PGBox Cloud",
+  "description": "Agent-Native Model Context Protocol (MCP) Server for PGBHub Cloud",
   "main": "./dist/index.js",
   "bin": {
-    "pgbox-mcp": "./dist/index.js"
+    "pgbhub-mcp": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -20,7 +20,7 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "pgbox",
+    "pgbhub",
     "postgres",
     "ai",
     "claude",

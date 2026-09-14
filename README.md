@@ -1,10 +1,10 @@
-# @pgbox/mcp (Agent-Native Model Context Protocol Server)
+# @pgbhub/mcp (Agent-Native Model Context Protocol Server)
 
-Official Model Context Protocol (MCP) server for **PGBox Cloud**. Connects autonomous AI coding agents (**Claude Code**, **Cursor**, **Windsurf**, and **Antigravity**) directly to your PostgreSQL databases to introspect schemas, safely execute business actions, and perform transactional CRUD operations.
+Official Model Context Protocol (MCP) server for **PGBHub Cloud**. Connects autonomous AI coding agents (**Claude Code**, **Cursor**, **Windsurf**, and **Antigravity**) directly to your PostgreSQL databases to introspect schemas, safely execute business actions, and perform transactional CRUD operations.
 
 ## Supported MCP Tools
 
-### 1. `pgbox_action` (Action Execution & Simulation)
+### 1. `pgbhub_action` (Action Execution & Simulation)
 Executes or simulates registered business actions inside atomic database transactions:
 ```json
 {
@@ -19,21 +19,21 @@ Executes or simulates registered business actions inside atomic database transac
 }
 ```
 
-### 2. `pgbox_list_actions` (Action Discovery)
+### 2. `pgbhub_list_actions` (Action Discovery)
 Lists all registered business actions available on the database, complete with their descriptions, parameter requirements, and sample payloads.
 
-### 3. `pgbox_inspect` (Schema Introspection)
+### 3. `pgbhub_inspect` (Schema Introspection)
 Retrieves semantic machine-readable `/schema.json` metadata (tables, column data types, primary keys, foreign keys, and action contracts).
 
-### 4. `pgbox_query_crud` (Safe Parameterized CRUD)
+### 4. `pgbhub_query_crud` (Safe Parameterized CRUD)
 Performs safe parameterized CRUD queries:
 - **Operations**: `find`, `insert`, `update`, `delete`, `count`
 - **Guarded**: Destructive table-wide drops are strictly blocked at the protocol layer.
 
-### 5. `pgbox_create_table` (Schema Provisioning)
+### 5. `pgbhub_create_table` (Schema Provisioning)
 Safely creates relational tables or JSONB document collections with typed columns and primary keys.
 
-### 6. `pgbox_provision` (Database Sandbox Provisioning)
+### 6. `pgbhub_provision` (Database Sandbox Provisioning)
 Provisions isolated, serverless PostgreSQL database sandboxes with dedicated credentials in under 30 seconds.
 
 ---
@@ -47,11 +47,11 @@ Add to your `.cursor/mcp.json`, `claude_desktop_config.json`, or Antigravity set
 ```json
 {
   "mcpServers": {
-    "pgbox-lokl": {
+    "pgbhub-lokl": {
       "command": "npx",
       "args": [
         "-y",
-        "@pgbox/mcp",
+        "@pgbhub/mcp",
         "--db",
         "lokl",
         "--url",
@@ -67,13 +67,13 @@ Or using environment variables:
 ```json
 {
   "mcpServers": {
-    "pgbox": {
+    "pgbhub": {
       "command": "npx",
-      "args": ["-y", "@pgbox/mcp"],
+      "args": ["-y", "@pgbhub/mcp"],
       "env": {
-        "PGBOX_ENDPOINT": "https://cloud.pgboxhub.com",
-        "PGBOX_API_KEY": "your_api_key_here",
-        "PGBOX_DATABASE": "lokl"
+        "PGBHUB_ENDPOINT": "https://cloud.pgbhub.com",
+        "PGBHUB_API_KEY": "your_api_key_here",
+        "PGBHUB_DATABASE": "lokl"
       }
     }
   }

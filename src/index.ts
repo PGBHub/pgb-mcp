@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * @pgb/mcp — Agent-Native Model Context Protocol (MCP) Server for PGBox Cloud
+ * @pgb/mcp — Agent-Native Model Context Protocol (MCP) Server for PGBHub Cloud
  *
  * Tools:
- *   pgbox_help, pgbox_provision_project, pgbox_get_project_graph,
- *   pgbox_execute_sql, pgbox_create_table, pgbox_query_crud,
- *   pgbox_deploy_function, pgbox_deploy_container,
- *   pgbox_configure_auth, pgbox_upload_asset, pgbox_send_mail
+ *   pgbhub_help, pgbhub_provision_project, pgbhub_get_project_graph,
+ *   pgbhub_execute_sql, pgbhub_create_table, pgbhub_query_crud,
+ *   pgbhub_deploy_function, pgbhub_deploy_container,
+ *   pgbhub_configure_auth, pgbhub_upload_asset, pgbhub_send_mail
  *
- * Resources: pgbox://instructions, pgbox://cheatsheet, pgbox://project/graph
+ * Resources: pgbhub://instructions, pgbhub://cheatsheet, pgbhub://project/graph
  * Prompts:   bootstrap_fullstack_app, generate_feature_module
  *
- * Zero-config sandbox mode: if no PGBOX_API_KEY is provided, an ephemeral
+ * Zero-config sandbox mode: if no PGBHUB_API_KEY is provided, an ephemeral
  * project is automatically provisioned and credentials returned inline.
  */
 
@@ -52,13 +52,13 @@ function parseCliArgs(): Record<string, string> {
 const cliArgs = parseCliArgs();
 
 function extractEndpoint(): string {
-  const raw = cliArgs.endpoint || cliArgs.e || process.env.PGBOX_ENDPOINT || "https://cloud.pgboxhub.com";
+  const raw = cliArgs.endpoint || cliArgs.e || process.env.PGBHUB_ENDPOINT || "https://cloud.pgbhub.com";
   return raw.replace(/\/$/, "");
 }
 
-const PGBOX_ENDPOINT = extractEndpoint();
-const PGBOX_API_KEY  = cliArgs.key || cliArgs["api-key"] || cliArgs.k || process.env.PGBOX_API_KEY || "";
-const PGBOX_PROJECT  = cliArgs.project || cliArgs.p || process.env.PGBOX_PROJECT_ID || "";
+const PGBHUB_ENDPOINT = extractEndpoint();
+const PGBHUB_API_KEY  = cliArgs.key || cliArgs["api-key"] || cliArgs.k || process.env.PGBHUB_API_KEY || "";
+const PGBHUB_PROJECT  = cliArgs.project || cliArgs.p || process.env.PGBHUB_PROJECT_ID || "";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sandbox provisioning (zero-config mode)
@@ -76,18 +76,18 @@ let _sandboxCtx: SandboxContext | null = null;
 
 async function ensureSandbox(): Promise<SandboxContext> {
   if (_sandboxCtx) return _sandboxCtx;
-  if (PGBOX_API_KEY && PGBOX_PROJECT) {
+  if (PGBHUB_API_KEY && PGBHUB_PROJECT) {
     _sandboxCtx = {
-      projectId: PGBOX_PROJECT,
-      projectUrl: `https://${PGBOX_PROJECT}.pgbhub.dev`,
-      apiKey: PGBOX_API_KEY,
-      claimUrl: `${PGBOX_ENDPOINT}/claim/${PGBOX_PROJECT}`,
+      projectId: PGBHUB_PROJECT,
+      projectUrl: `https://${PGBHUB_PROJECT}.pgbhub.dev`,
+      apiKey: PGBHUB_API_KEY,
+      claimUrl: `${PGBHUB_ENDPOINT}/claim/${PGBHUB_PROJECT}`,
       ephemeral: false,
     };
     return _sandboxCtx;
   }
   // Auto-provision ephemeral sandbox
-  const res = await fetch(`${PGBOX_ENDPOINT}/api/v1/sandbox/provision`, {
+  const res = await fetch(`${PGBHUB_ENDPOINT}/api/v1/sandbox/provision`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ ephemeral: true }),
@@ -120,12 +120,12 @@ function authHeaders(apiKey: string): Record<string, string> {
 }
 
 async function apiGet(path: string, ctx: SandboxContext): Promise<unknown> {
-  const res = await fetch(`${PGBOX_ENDPOINT}${path}`, { headers: authHeaders(ctx.apiKey) });
+  const res = await fetch(`${PGBHUB_ENDPOINT}${path}`, { headers: authHeaders(ctx.apiKey) });
   return res.json();
 }
 
 async function apiPost(path: string, body: unknown, ctx: SandboxContext): Promise<unknown> {
-  const res = await fetch(`${PGBOX_ENDPOINT}${path}`, {
+  const res = await fetch(`${PGBHUB_ENDPOINT}${path}`, {
     method: "POST",
     headers: authHeaders(ctx.apiKey),
     body: JSON.stringify(body),
@@ -134,7 +134,7 @@ async function apiPost(path: string, body: unknown, ctx: SandboxContext): Promis
 }
 
 async function apiPatch(path: string, body: unknown, ctx: SandboxContext): Promise<unknown> {
-  const res = await fetch(`${PGBOX_ENDPOINT}${path}`, {
+  const res = await fetch(`${PGBHUB_ENDPOINT}${path}`, {
     method: "PATCH",
     headers: authHeaders(ctx.apiKey),
     body: JSON.stringify(body),
@@ -146,9 +146,9 @@ async function apiPatch(path: string, body: unknown, ctx: SandboxContext): Promi
 // Static content for resources
 // ─────────────────────────────────────────────────────────────────────────────
 
-const INSTRUCTIONS_TEXT = `# PGBox MCP Server — Instructions
+const INSTRUCTIONS_TEXT = `# PGBHub MCP Server — Instructions
 
-PGBox is a programmable backend for AI-native applications.
+PGBHub is a programmable backend for AI-native applications.
 
 ## What you can do
 - **Provision** a full-stack backend (DB + auth + storage + mail + functions) in <5s
@@ -175,27 +175,27 @@ Zero vendor lock-in — any standard Postgres client works.
 https://docs.pgbhub.com
 `;
 
-const CHEATSHEET_TEXT = `# PGBox MCP Cheatsheet
+const CHEATSHEET_TEXT = `# PGBHub MCP Cheatsheet
 
 ## 1. Provision a project
 \`\`\`
-pgbox_provision_project(name="myapp", region="eu-west-1")
+pgbhub_provision_project(name="myapp", region="eu-west-1")
 \`\`\`
 
 ## 2. Execute SQL
 \`\`\`
-pgbox_execute_sql(sql="SELECT * FROM users WHERE id = $1", params=[42])
+pgbhub_execute_sql(sql="SELECT * FROM users WHERE id = $1", params=[42])
 \`\`\`
 
 ## 3. CRUD helpers
 \`\`\`
-pgbox_query_crud(operation="insert", table="orders", data={"user_id": 1, "amount": 99.99})
-pgbox_query_crud(operation="find",   table="orders", filter={"user_id": 1}, limit=20)
+pgbhub_query_crud(operation="insert", table="orders", data={"user_id": 1, "amount": 99.99})
+pgbhub_query_crud(operation="find",   table="orders", filter={"user_id": 1}, limit=20)
 \`\`\`
 
 ## 4. Create a table
 \`\`\`
-pgbox_create_table(table_name="products", columns=[
+pgbhub_create_table(table_name="products", columns=[
   { name: "id",    type: "bigserial", primary_key: true },
   { name: "name",  type: "text",      nullable: false },
   { name: "price", type: "numeric(10,2)" }
@@ -204,27 +204,27 @@ pgbox_create_table(table_name="products", columns=[
 
 ## 5. Deploy a function
 \`\`\`
-pgbox_deploy_function(module_name="checkout", code="export async function POST(req, ctx) { ... }")
+pgbhub_deploy_function(module_name="checkout", code="export async function POST(req, ctx) { ... }")
 \`\`\`
 
 ## 6. Deploy a container
 \`\`\`
-pgbox_deploy_container(image="ghcr.io/myorg/myapp:latest", tier="standard", min_replicas=1, max_replicas=5)
+pgbhub_deploy_container(image="ghcr.io/myorg/myapp:latest", tier="standard", min_replicas=1, max_replicas=5)
 \`\`\`
 
 ## 7. Send mail
 \`\`\`
-pgbox_send_mail(to="user@example.com", subject="Welcome!", text="Thanks for signing up.")
+pgbhub_send_mail(to="user@example.com", subject="Welcome!", text="Thanks for signing up.")
 \`\`\`
 
 ## 8. Configure auth
 \`\`\`
-pgbox_configure_auth(enable_magic_links=true, enable_otp=true, jwt_expiry_hours=24)
+pgbhub_configure_auth(enable_magic_links=true, enable_otp=true, jwt_expiry_hours=24)
 \`\`\`
 
 ## 9. Upload asset
 \`\`\`
-pgbox_upload_asset(file_path="assets/logo.png", content_type="image/png")
+pgbhub_upload_asset(file_path="assets/logo.png", content_type="image/png")
 \`\`\`
 `;
 
@@ -248,8 +248,8 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
-      name: "pgbox_help",
-      description: "Get comprehensive help and workflow guidance for PGBox. Covers provisioning, SQL, functions, containers, auth, storage, and mail. Start here if you're unsure what to do.",
+      name: "pgbhub_help",
+      description: "Get comprehensive help and workflow guidance for PGBHub. Covers provisioning, SQL, functions, containers, auth, storage, and mail. Start here if you're unsure what to do.",
       inputSchema: {
         type: "object",
         properties: {
@@ -262,7 +262,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_provision_project",
+      name: "pgbhub_provision_project",
       description: "Provision a full-stack backend (PostgreSQL DB, auth, storage, mail, serverless functions) in under 5 seconds. If no API key is configured, an ephemeral sandbox project is automatically provisioned.",
       inputSchema: {
         type: "object",
@@ -275,7 +275,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_get_project_graph",
+      name: "pgbhub_get_project_graph",
       description: "Retrieve the complete machine-readable project topology graph: database schema, tables, functions, containers, auth config, storage usage, and mail reputation.",
       inputSchema: {
         type: "object",
@@ -285,7 +285,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_execute_sql",
+      name: "pgbhub_execute_sql",
       description: "Execute a parameterized SQL query against the project PostgreSQL database. Use $1, $2, ... placeholders. Dangerous DDL (DROP DATABASE, ALTER SYSTEM) is blocked.",
       inputSchema: {
         type: "object",
@@ -303,7 +303,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_create_table",
+      name: "pgbhub_create_table",
       description: "Create a new relational table with typed columns and primary keys in the project database. DROP operations are fully blocked by guardrails.",
       inputSchema: {
         type: "object",
@@ -330,7 +330,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_query_crud",
+      name: "pgbhub_query_crud",
       description: "Execute safe parameterized SELECT, INSERT, UPDATE, DELETE, or COUNT operations on database tables without writing raw SQL.",
       inputSchema: {
         type: "object",
@@ -353,7 +353,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_deploy_function",
+      name: "pgbhub_deploy_function",
       description: "Deploy or update a serverless function module. Supports TypeScript (Hono-style multi-endpoint named exports: GET, POST, PUT, DELETE). Receives ambient context: { db, user, storage, email, secrets }.",
       inputSchema: {
         type: "object",
@@ -367,7 +367,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_deploy_container",
+      name: "pgbhub_deploy_container",
       description: "Deploy a containerized application with auto-scaling, scale-to-zero, and timezone-aware scheduled windows. Requires a verified payment card for >1 replica or Standard+ tiers.",
       inputSchema: {
         type: "object",
@@ -391,7 +391,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_configure_auth",
+      name: "pgbhub_configure_auth",
       description: "Configure built-in PGB Auth settings for the project. Enables signup/login, magic links, OTP, JWT expiry, and custom OAuth providers. Free for up to 5,000 MAUs/month.",
       inputSchema: {
         type: "object",
@@ -411,7 +411,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_upload_asset",
+      name: "pgbhub_upload_asset",
       description: "Generate a presigned upload URL for a file to project R2/S3 storage, with public CDN caching. 500 MB free storage pool per account.",
       inputSchema: {
         type: "object",
@@ -425,8 +425,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "pgbox_send_mail",
-      description: "Send a transactional email via PGBox managed SES (noreply@mail.pgbhub.dev) or custom BYO SMTP. 100 free emails/month; $0.001/email thereafter. Subject to velocity and reputation limits.",
+      name: "pgbhub_send_mail",
+      description: "Send a transactional email via PGBHub managed SES (noreply@mail.pgbhub.dev) or custom BYO SMTP. 100 free emails/month; $0.001/email thereafter. Subject to velocity and reputation limits.",
       inputSchema: {
         type: "object",
         properties: {
@@ -448,19 +448,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(ListResourcesRequestSchema, async () => ({
   resources: [
     {
-      uri: "pgbox://instructions",
-      name: "PGBox Instructions",
-      description: "Complete guide to using PGBox: free tier limits, connection strings, and platform overview.",
+      uri: "pgbhub://instructions",
+      name: "PGBHub Instructions",
+      description: "Complete guide to using PGBHub: free tier limits, connection strings, and platform overview.",
       mimeType: "text/markdown",
     },
     {
-      uri: "pgbox://cheatsheet",
-      name: "PGBox Cheatsheet",
-      description: "Quick-reference examples for all major PGBox operations.",
+      uri: "pgbhub://cheatsheet",
+      name: "PGBHub Cheatsheet",
+      description: "Quick-reference examples for all major PGBHub operations.",
       mimeType: "text/markdown",
     },
     {
-      uri: "pgbox://project/graph",
+      uri: "pgbhub://project/graph",
       name: "Project Graph",
       description: "Live machine-readable topology of the current project (schema, functions, containers, auth, storage).",
       mimeType: "application/json",
@@ -473,15 +473,15 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => ({
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const { uri } = request.params;
 
-  if (uri === "pgbox://instructions") {
+  if (uri === "pgbhub://instructions") {
     return { contents: [{ uri, mimeType: "text/markdown", text: INSTRUCTIONS_TEXT }] };
   }
 
-  if (uri === "pgbox://cheatsheet") {
+  if (uri === "pgbhub://cheatsheet") {
     return { contents: [{ uri, mimeType: "text/markdown", text: CHEATSHEET_TEXT }] };
   }
 
-  if (uri === "pgbox://project/graph") {
+  if (uri === "pgbhub://project/graph") {
     try {
       const ctx = await ensureSandbox();
       const data = await apiGet(`/api/v1/projects/${ctx.projectId}`, ctx);
@@ -508,7 +508,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
   prompts: [
     {
       name: "bootstrap_fullstack_app",
-      description: "Generate a complete starter plan and code scaffold for a full-stack app on PGBox: database schema, auth, API functions, container deployment, and mail configuration.",
+      description: "Generate a complete starter plan and code scaffold for a full-stack app on PGBHub: database schema, auth, API functions, container deployment, and mail configuration.",
       arguments: [
         { name: "app_description", description: "Brief description of the app (e.g. 'SaaS invoice management tool')", required: true },
         { name: "tech_stack",      description: "Frontend tech (e.g. Next.js, React, Vue). Default: Next.js", required: false },
@@ -516,7 +516,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     },
     {
       name: "generate_feature_module",
-      description: "Generate a complete PGBox serverless function module for a specific feature, including typed request/response handlers, DB queries, and ambient context usage.",
+      description: "Generate a complete PGBHub serverless function module for a specific feature, including typed request/response handlers, DB queries, and ambient context usage.",
       arguments: [
         { name: "feature_name",   description: "Feature name (e.g. 'checkout', 'user-profile', 'notifications')", required: true },
         { name: "http_methods",   description: "Comma-separated HTTP methods to implement (e.g. 'GET,POST'). Default: GET,POST", required: false },
@@ -540,13 +540,13 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
           role: "user",
           content: {
             type: "text",
-            text: `I want to build ${desc} using ${stack} on the frontend and PGBox as the backend.
+            text: `I want to build ${desc} using ${stack} on the frontend and PGBHub as the backend.
 
 Please:
-1. Use \`pgbox_provision_project\` to create the project
-2. Use \`pgbox_create_table\` to design the database schema (suggest appropriate tables with proper types)
-3. Use \`pgbox_configure_auth\` to configure authentication
-4. Use \`pgbox_deploy_function\` to create the core API function modules
+1. Use \`pgbhub_provision_project\` to create the project
+2. Use \`pgbhub_create_table\` to design the database schema (suggest appropriate tables with proper types)
+3. Use \`pgbhub_configure_auth\` to configure authentication
+4. Use \`pgbhub_deploy_function\` to create the core API function modules
 5. Provide a complete \`pgb.config.json\` and \`.env.example\`
 6. Show how to initialize the \`@pgb/sdk\` client in ${stack}
 
@@ -567,7 +567,7 @@ Return a complete, production-ready starter scaffold.`,
           role: "user",
           content: {
             type: "text",
-            text: `Generate a complete PGBox serverless function module for the "${feature}" feature.
+            text: `Generate a complete PGBHub serverless function module for the "${feature}" feature.
 
 Requirements:
 - HTTP methods to implement: ${methods}
@@ -577,7 +577,7 @@ Requirements:
 - Include input validation, error handling, and TypeScript types
 - Add JSDoc comments
 
-Then deploy it with \`pgbox_deploy_function\`.`,
+Then deploy it with \`pgbhub_deploy_function\`.`,
           },
         },
       ],
@@ -601,31 +601,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   try {
-    // ── pgbox_help ──────────────────────────────────────────────────────────
-    if (name === "pgbox_help") {
+    // ── pgbhub_help ──────────────────────────────────────────────────────────
+    if (name === "pgbhub_help") {
       const topic = (args?.topic as string) || "overview";
       const topicContent: Record<string, string> = {
         overview:   INSTRUCTIONS_TEXT,
-        sql:        "## SQL Execution\n\nUse `pgbox_execute_sql` with parameterized queries ($1, $2, ...) or `pgbox_query_crud` for typed CRUD operations without writing SQL.\n\nStatement timeout: 5s (configurable up to 30s).\nMemory cap: 16 MB work_mem per query.\nBlocked: DROP DATABASE, ALTER SYSTEM, and raw DDL concatenation.",
-        functions:  "## Serverless Functions\n\nDeploy TypeScript modules with `pgbox_deploy_function`. Each module handles a sub-path:\n- `functions/checkout.ts` → `/<projectId>.pgbhub.dev/checkout/*`\n- Named exports: GET, POST, PUT, DELETE\n- Ambient context: `{ db, user, storage, email, secrets, params, query }`\n- Cold start: <25ms via CRIU memory snapshot restore",
-        containers: "## Containers\n\nDeploy Docker images with `pgbox_deploy_container`. Features:\n- Scale-to-zero (0 MB RAM when idle, <25ms cold start via CRIU)\n- Timezone-aware scheduled windows (e.g. 09:00–18:00 Europe/London)\n- Auto-scaling: 1–20 replicas based on concurrency\n- Payment card required for >1 replica or Standard+ tier\n- Egress: SMTP ports 25/465/587 blocked by default on free tier",
+        sql:        "## SQL Execution\n\nUse `pgbhub_execute_sql` with parameterized queries ($1, $2, ...) or `pgbhub_query_crud` for typed CRUD operations without writing SQL.\n\nStatement timeout: 5s (configurable up to 30s).\nMemory cap: 16 MB work_mem per query.\nBlocked: DROP DATABASE, ALTER SYSTEM, and raw DDL concatenation.",
+        functions:  "## Serverless Functions\n\nDeploy TypeScript modules with `pgbhub_deploy_function`. Each module handles a sub-path:\n- `functions/checkout.ts` → `/<projectId>.pgbhub.dev/checkout/*`\n- Named exports: GET, POST, PUT, DELETE\n- Ambient context: `{ db, user, storage, email, secrets, params, query }`\n- Cold start: <25ms via CRIU memory snapshot restore",
+        containers: "## Containers\n\nDeploy Docker images with `pgbhub_deploy_container`. Features:\n- Scale-to-zero (0 MB RAM when idle, <25ms cold start via CRIU)\n- Timezone-aware scheduled windows (e.g. 09:00–18:00 Europe/London)\n- Auto-scaling: 1–20 replicas based on concurrency\n- Payment card required for >1 replica or Standard+ tier\n- Egress: SMTP ports 25/465/587 blocked by default on free tier",
         auth:       "## Auth as a Service\n\nBuilt-in auth routes at `/<projectId>.pgbhub.dev/auth/*`:\n- POST /auth/signup, /auth/login, /auth/verify\n- POST /auth/magic (magic link), /auth/otp\n- GET  /auth/user (current user)\nFree for up to 5,000 MAUs/month. JWT tokens with Argon2id password hashing.",
-        storage:    "## R2/S3 Storage\n\nGet presigned upload URLs via `pgbox_upload_asset`. Features:\n- 500 MB free storage pool per account\n- Project-prefix partitioning: projects/<projectId>/<filePath>\n- Public CDN caching: Cache-Control: public, max-age=31536000\n- 15-minute presigned URL TTL",
-        mail:       "## Transactional Mail\n\nSend email via `pgbox_send_mail`. Features:\n- 100 free emails/month via managed AWS SES (noreply@mail.pgbhub.dev)\n- BYO SMTP/domain: $0.00 platform fee\n- Overage: $0.001/email with verified payment card\n- Velocity limit: 5 emails/minute on free tier\n- Reputation quarantine: 2.5% bounce rate or 0.08% complaint rate threshold",
+        storage:    "## R2/S3 Storage\n\nGet presigned upload URLs via `pgbhub_upload_asset`. Features:\n- 500 MB free storage pool per account\n- Project-prefix partitioning: projects/<projectId>/<filePath>\n- Public CDN caching: Cache-Control: public, max-age=31536000\n- 15-minute presigned URL TTL",
+        mail:       "## Transactional Mail\n\nSend email via `pgbhub_send_mail`. Features:\n- 100 free emails/month via managed AWS SES (noreply@mail.pgbhub.dev)\n- BYO SMTP/domain: $0.00 platform fee\n- Overage: $0.001/email with verified payment card\n- Velocity limit: 5 emails/minute on free tier\n- Reputation quarantine: 2.5% bounce rate or 0.08% complaint rate threshold",
         billing:    "## Billing & Pricing\n\nDual-axis invoicing: by Resource Type AND by Project.\n\n| Resource | Free | Paid |\n|---|---|---|\n| DB compute | 20 hours/mo | $0.014–$0.250/hr |\n| Storage | 500 MB | $0.20/GB/mo |\n| Auth MAUs | 5,000/mo | $0.002/MAU |\n| Emails | 100/mo | $0.001/email |\n| Backups | Manual only | $1/mo (<500MB), $5/mo (500MB–5GB) |\n| Containers | Micro scale-to-zero | $0.03–$0.25/hr |\n\n$5.00 minimum billing threshold.",
         cli:        "## Local CLI\n\n```bash\nnpx pgb login\nnpx pgb init my-app\nnpx pgb dev        # local simulator on port 4000\n```\n\nProject structure:\n```\nfunctions/          # serverless function modules\ncontainers/         # Dockerfile(s)\ncron/               # scheduled jobs\nmigrations/         # SQL migration files\npgb.config.json     # project config\n.env.example        # env variable template\n```",
       };
       return ok({ topic, content: topicContent[topic] || INSTRUCTIONS_TEXT });
     }
 
-    // ── pgbox_provision_project ─────────────────────────────────────────────
-    if (name === "pgbox_provision_project") {
+    // ── pgbhub_provision_project ─────────────────────────────────────────────
+    if (name === "pgbhub_provision_project") {
       const projName = String(args?.name || "").trim().toLowerCase();
       const region   = String(args?.region || "eu-west-1");
       const ephemeral = Boolean(args?.ephemeral ?? false);
 
       // If no API key configured, auto-provision sandbox instead
-      if (!PGBOX_API_KEY && !ephemeral) {
+      if (!PGBHUB_API_KEY && !ephemeral) {
         const ctx = await ensureSandbox();
         return ok({
           message: "Ephemeral sandbox project auto-provisioned (no API key configured).",
@@ -634,8 +634,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
       }
 
-      const headers = authHeaders(PGBOX_API_KEY);
-      const res = await fetch(`${PGBOX_ENDPOINT}/api/v1/projects`, {
+      const headers = authHeaders(PGBHUB_API_KEY);
+      const res = await fetch(`${PGBHUB_ENDPOINT}/api/v1/projects`, {
         method: "POST",
         headers,
         body: JSON.stringify({ name: projName, region, ephemeral }),
@@ -653,16 +653,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
     }
 
-    // ── pgbox_get_project_graph ─────────────────────────────────────────────
-    if (name === "pgbox_get_project_graph") {
+    // ── pgbhub_get_project_graph ─────────────────────────────────────────────
+    if (name === "pgbhub_get_project_graph") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const data = await apiGet(`/api/v1/projects/${pid}`, ctx);
       return ok(data);
     }
 
-    // ── pgbox_execute_sql ───────────────────────────────────────────────────
-    if (name === "pgbox_execute_sql") {
+    // ── pgbhub_execute_sql ───────────────────────────────────────────────────
+    if (name === "pgbhub_execute_sql") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const sql = String(args?.sql || "").trim();
@@ -673,8 +673,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return ok(data);
     }
 
-    // ── pgbox_create_table ──────────────────────────────────────────────────
-    if (name === "pgbox_create_table") {
+    // ── pgbhub_create_table ──────────────────────────────────────────────────
+    if (name === "pgbhub_create_table") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const tableName = String(args?.table_name || "").trim();
@@ -701,8 +701,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return ok({ success: true, table: tableName, ddl, result: data });
     }
 
-    // ── pgbox_query_crud ────────────────────────────────────────────────────
-    if (name === "pgbox_query_crud") {
+    // ── pgbhub_query_crud ────────────────────────────────────────────────────
+    if (name === "pgbhub_query_crud") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const op    = String(args?.operation || "find").toLowerCase();
@@ -725,8 +725,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return ok(data);
     }
 
-    // ── pgbox_deploy_function ───────────────────────────────────────────────
-    if (name === "pgbox_deploy_function") {
+    // ── pgbhub_deploy_function ───────────────────────────────────────────────
+    if (name === "pgbhub_deploy_function") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const moduleName = String(args?.module_name || "").trim();
@@ -746,8 +746,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
     }
 
-    // ── pgbox_deploy_container ──────────────────────────────────────────────
-    if (name === "pgbox_deploy_container") {
+    // ── pgbhub_deploy_container ──────────────────────────────────────────────
+    if (name === "pgbhub_deploy_container") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const image        = String(args?.image || "").trim();
@@ -764,8 +764,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return ok(data);
     }
 
-    // ── pgbox_configure_auth ────────────────────────────────────────────────
-    if (name === "pgbox_configure_auth") {
+    // ── pgbhub_configure_auth ────────────────────────────────────────────────
+    if (name === "pgbhub_configure_auth") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const data = await apiPatch(`/api/v1/projects/${pid}/auth/config`, {
@@ -779,8 +779,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return ok(data);
     }
 
-    // ── pgbox_upload_asset ──────────────────────────────────────────────────
-    if (name === "pgbox_upload_asset") {
+    // ── pgbhub_upload_asset ──────────────────────────────────────────────────
+    if (name === "pgbhub_upload_asset") {
       const ctx = await ensureSandbox();
       const pid          = (args?.project_id as string) || ctx.projectId;
       const file_path    = String(args?.file_path || "").trim();
@@ -797,8 +797,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return ok(data);
     }
 
-    // ── pgbox_send_mail ─────────────────────────────────────────────────────
-    if (name === "pgbox_send_mail") {
+    // ── pgbhub_send_mail ─────────────────────────────────────────────────────
+    if (name === "pgbhub_send_mail") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const to      = String(args?.to || "").trim();
@@ -829,8 +829,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function run() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  const mode = PGBOX_API_KEY ? "authenticated" : "zero-config sandbox";
-  console.error(`@pgb/mcp v2.0.0 running (mode: ${mode}, endpoint: ${PGBOX_ENDPOINT})`);
+  const mode = PGBHUB_API_KEY ? "authenticated" : "zero-config sandbox";
+  console.error(`@pgb/mcp v2.0.0 running (mode: ${mode}, endpoint: ${PGBHUB_ENDPOINT})`);
 }
 
 run().catch((err) => {
