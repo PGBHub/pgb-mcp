@@ -57,8 +57,8 @@ function extractEndpoint(): string {
 }
 
 const PGBHUB_ENDPOINT = extractEndpoint();
-const PGBHUB_API_KEY  = cliArgs.key || cliArgs["api-key"] || cliArgs.k || process.env.PGBHUB_API_KEY || "";
-const PGBHUB_PROJECT  = cliArgs.project || cliArgs.p || process.env.PGBHUB_PROJECT_ID || "";
+const PGBHUB_API_KEY = cliArgs.key || cliArgs["api-key"] || cliArgs.k || process.env.PGBHUB_API_KEY || "";
+const PGBHUB_PROJECT = cliArgs.project || cliArgs.p || process.env.PGBHUB_PROJECT_ID || "";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sandbox provisioning (zero-config mode)
@@ -267,7 +267,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Project name slug (lowercase, alphanumeric, hyphens). e.g. 'my-app'" },
+          name: { type: "string", description: "Project name slug (lowercase, alphanumeric, hyphens). e.g. 'myapp'" },
           region: { type: "string", description: "Deployment region (e.g. eu-west-1, us-east-1). Defaults to eu-west-1." },
           ephemeral: { type: "boolean", description: "If true, provisions a temporary sandbox (auto-claimed by user). Default: false" },
         },
@@ -314,11 +314,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: {
               type: "object",
               properties: {
-                name:        { type: "string" },
-                type:        { type: "string", description: "PostgreSQL type: text, bigserial, numeric, jsonb, timestamptz, boolean, uuid, etc." },
+                name: { type: "string" },
+                type: { type: "string", description: "PostgreSQL type: text, bigserial, numeric, jsonb, timestamptz, boolean, uuid, etc." },
                 primary_key: { type: "boolean" },
-                nullable:    { type: "boolean" },
-                default:     { type: "string", description: "SQL default expression (e.g. NOW(), gen_random_uuid())" },
+                nullable: { type: "boolean" },
+                default: { type: "string", description: "SQL default expression (e.g. NOW(), gen_random_uuid())" },
               },
               required: ["name", "type"],
             },
@@ -340,13 +340,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             enum: ["find", "insert", "update", "delete", "count"],
             description: "CRUD operation to perform",
           },
-          table:    { type: "string", description: "Target table name" },
-          data:     { type: "object", description: "Row data for insert or update" },
-          filter:   { type: "object", description: "Key-value filter criteria (e.g. { id: 42 })" },
-          limit:    { type: "number", description: "Max rows to return (default: 100)" },
-          offset:   { type: "number", description: "Rows to skip (for pagination)" },
+          table: { type: "string", description: "Target table name" },
+          data: { type: "object", description: "Row data for insert or update" },
+          filter: { type: "object", description: "Key-value filter criteria (e.g. { id: 42 })" },
+          limit: { type: "number", description: "Max rows to return (default: 100)" },
+          offset: { type: "number", description: "Rows to skip (for pagination)" },
           order_by: { type: "string", description: "Column to order by" },
-          order:    { type: "string", enum: ["ASC", "DESC"], description: "Sort direction (default: ASC)" },
+          order: { type: "string", enum: ["ASC", "DESC"], description: "Sort direction (default: ASC)" },
           project_id: { type: "string", description: "Project ID (defaults to configured project)" },
         },
         required: ["operation", "table"],
@@ -396,11 +396,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
-          enable_email_signup:  { type: "boolean", description: "Allow users to sign up with email/password (default: true)" },
-          enable_magic_links:   { type: "boolean", description: "Enable passwordless magic link sign-in" },
-          enable_otp:           { type: "boolean", description: "Enable one-time password (OTP) sign-in" },
-          jwt_expiry_hours:     { type: "number",  description: "JWT access token expiry in hours (default: 1)" },
-          refresh_expiry_days:  { type: "number",  description: "Refresh token expiry in days (default: 30)" },
+          enable_email_signup: { type: "boolean", description: "Allow users to sign up with email/password (default: true)" },
+          enable_magic_links: { type: "boolean", description: "Enable passwordless magic link sign-in" },
+          enable_otp: { type: "boolean", description: "Enable one-time password (OTP) sign-in" },
+          jwt_expiry_hours: { type: "number", description: "JWT access token expiry in hours (default: 1)" },
+          refresh_expiry_days: { type: "number", description: "Refresh token expiry in days (default: 30)" },
           allowed_email_domains: {
             type: "array",
             items: { type: "string" },
@@ -416,10 +416,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
-          file_path:    { type: "string", description: "Destination path within the project storage bucket (e.g. 'avatars/user-123.png')" },
+          file_path: { type: "string", description: "Destination path within the project storage bucket (e.g. 'avatars/user-123.png')" },
           content_type: { type: "string", description: "MIME type of the file (e.g. 'image/png', 'application/pdf')" },
-          public:       { type: "boolean", description: "Make file publicly accessible via CDN (default: false)" },
-          project_id:   { type: "string", description: "Project ID (defaults to configured project)" },
+          public: { type: "boolean", description: "Make file publicly accessible via CDN (default: false)" },
+          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
         },
         required: ["file_path", "content_type"],
       },
@@ -430,11 +430,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
-          to:         { type: "string", description: "Recipient email address" },
-          subject:    { type: "string", description: "Email subject line" },
-          text:       { type: "string", description: "Plain-text email body" },
-          html:       { type: "string", description: "Optional HTML email body" },
-          reply_to:   { type: "string", description: "Optional reply-to email address" },
+          to: { type: "string", description: "Recipient email address" },
+          subject: { type: "string", description: "Email subject line" },
+          text: { type: "string", description: "Plain-text email body" },
+          html: { type: "string", description: "Optional HTML email body" },
+          reply_to: { type: "string", description: "Optional reply-to email address" },
           project_id: { type: "string", description: "Project ID (defaults to configured project)" },
         },
         required: ["to", "subject", "text"],
@@ -511,16 +511,16 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
       description: "Generate a complete starter plan and code scaffold for a full-stack app on PGBHub: database schema, auth, API functions, container deployment, and mail configuration.",
       arguments: [
         { name: "app_description", description: "Brief description of the app (e.g. 'SaaS invoice management tool')", required: true },
-        { name: "tech_stack",      description: "Frontend tech (e.g. Next.js, React, Vue). Default: Next.js", required: false },
+        { name: "tech_stack", description: "Frontend tech (e.g. Next.js, React, Vue). Default: Next.js", required: false },
       ],
     },
     {
       name: "generate_feature_module",
       description: "Generate a complete PGBHub serverless function module for a specific feature, including typed request/response handlers, DB queries, and ambient context usage.",
       arguments: [
-        { name: "feature_name",   description: "Feature name (e.g. 'checkout', 'user-profile', 'notifications')", required: true },
-        { name: "http_methods",   description: "Comma-separated HTTP methods to implement (e.g. 'GET,POST'). Default: GET,POST", required: false },
-        { name: "db_tables",      description: "Comma-separated list of DB tables this feature interacts with", required: false },
+        { name: "feature_name", description: "Feature name (e.g. 'checkout', 'user-profile', 'notifications')", required: true },
+        { name: "http_methods", description: "Comma-separated HTTP methods to implement (e.g. 'GET,POST'). Default: GET,POST", required: false },
+        { name: "db_tables", description: "Comma-separated list of DB tables this feature interacts with", required: false },
       ],
     },
   ],
@@ -560,7 +560,7 @@ Return a complete, production-ready starter scaffold.`,
   if (name === "generate_feature_module") {
     const feature = (promptArgs?.feature_name as string) || "feature";
     const methods = (promptArgs?.http_methods as string) || "GET,POST";
-    const tables  = (promptArgs?.db_tables as string) || "";
+    const tables = (promptArgs?.db_tables as string) || "";
     return {
       messages: [
         {
@@ -605,15 +605,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === "pgbhub_help") {
       const topic = (args?.topic as string) || "overview";
       const topicContent: Record<string, string> = {
-        overview:   INSTRUCTIONS_TEXT,
-        sql:        "## SQL Execution\n\nUse `pgbhub_execute_sql` with parameterized queries ($1, $2, ...) or `pgbhub_query_crud` for typed CRUD operations without writing SQL.\n\nStatement timeout: 5s (configurable up to 30s).\nMemory cap: 16 MB work_mem per query.\nBlocked: DROP DATABASE, ALTER SYSTEM, and raw DDL concatenation.",
-        functions:  "## Serverless Functions\n\nDeploy TypeScript modules with `pgbhub_deploy_function`. Each module handles a sub-path:\n- `functions/checkout.ts` → `/<projectId>.pgbhub.dev/checkout/*`\n- Named exports: GET, POST, PUT, DELETE\n- Ambient context: `{ db, user, storage, email, secrets, params, query }`\n- Cold start: <25ms via CRIU memory snapshot restore",
+        overview: INSTRUCTIONS_TEXT,
+        sql: "## SQL Execution\n\nUse `pgbhub_execute_sql` with parameterized queries ($1, $2, ...) or `pgbhub_query_crud` for typed CRUD operations without writing SQL.\n\nStatement timeout: 5s (configurable up to 30s).\nMemory cap: 16 MB work_mem per query.\nBlocked: DROP DATABASE, ALTER SYSTEM, and raw DDL concatenation.",
+        functions: "## Serverless Functions\n\nDeploy TypeScript modules with `pgbhub_deploy_function`. Each module handles a sub-path:\n- `functions/checkout.ts` → `/<projectId>.pgbhub.dev/checkout/*`\n- Named exports: GET, POST, PUT, DELETE\n- Ambient context: `{ db, user, storage, email, secrets, params, query }`\n- Cold start: <25ms via CRIU memory snapshot restore",
         containers: "## Containers\n\nDeploy Docker images with `pgbhub_deploy_container`. Features:\n- Scale-to-zero (0 MB RAM when idle, <25ms cold start via CRIU)\n- Timezone-aware scheduled windows (e.g. 09:00–18:00 Europe/London)\n- Auto-scaling: 1–20 replicas based on concurrency\n- Payment card required for >1 replica or Standard+ tier\n- Egress: SMTP ports 25/465/587 blocked by default on free tier",
-        auth:       "## Auth as a Service\n\nBuilt-in auth routes at `/<projectId>.pgbhub.dev/auth/*`:\n- POST /auth/signup, /auth/login, /auth/verify\n- POST /auth/magic (magic link), /auth/otp\n- GET  /auth/user (current user)\nFree for up to 5,000 MAUs/month. JWT tokens with Argon2id password hashing.",
-        storage:    "## R2/S3 Storage\n\nGet presigned upload URLs via `pgbhub_upload_asset`. Features:\n- 500 MB free storage pool per account\n- Project-prefix partitioning: projects/<projectId>/<filePath>\n- Public CDN caching: Cache-Control: public, max-age=31536000\n- 15-minute presigned URL TTL",
-        mail:       "## Transactional Mail\n\nSend email via `pgbhub_send_mail`. Features:\n- 100 free emails/month via managed AWS SES (noreply@mail.pgbhub.dev)\n- BYO SMTP/domain: $0.00 platform fee\n- Overage: $0.001/email with verified payment card\n- Velocity limit: 5 emails/minute on free tier\n- Reputation quarantine: 2.5% bounce rate or 0.08% complaint rate threshold",
-        billing:    "## Billing & Pricing\n\nDual-axis invoicing: by Resource Type AND by Project.\n\n| Resource | Free | Paid |\n|---|---|---|\n| DB compute | 20 hours/mo | $0.014–$0.250/hr |\n| Storage | 500 MB | $0.20/GB/mo |\n| Auth MAUs | 5,000/mo | $0.002/MAU |\n| Emails | 100/mo | $0.001/email |\n| Backups | Manual only | $1/mo (<500MB), $5/mo (500MB–5GB) |\n| Containers | Micro scale-to-zero | $0.03–$0.25/hr |\n\n$5.00 minimum billing threshold.",
-        cli:        "## Local CLI\n\n```bash\nnpx pgb login\nnpx pgb init my-app\nnpx pgb dev        # local simulator on port 4000\n```\n\nProject structure:\n```\nfunctions/          # serverless function modules\ncontainers/         # Dockerfile(s)\ncron/               # scheduled jobs\nmigrations/         # SQL migration files\npgb.config.json     # project config\n.env.example        # env variable template\n```",
+        auth: "## Auth as a Service\n\nBuilt-in auth routes at `/<projectId>.pgbhub.dev/auth/*`:\n- POST /auth/signup, /auth/login, /auth/verify\n- POST /auth/magic (magic link), /auth/otp\n- GET  /auth/user (current user)\nFree for up to 5,000 MAUs/month. JWT tokens with Argon2id password hashing.",
+        storage: "## R2/S3 Storage\n\nGet presigned upload URLs via `pgbhub_upload_asset`. Features:\n- 500 MB free storage pool per account\n- Project-prefix partitioning: projects/<projectId>/<filePath>\n- Public CDN caching: Cache-Control: public, max-age=31536000\n- 15-minute presigned URL TTL",
+        mail: "## Transactional Mail\n\nSend email via `pgbhub_send_mail`. Features:\n- 100 free emails/month via managed AWS SES (noreply@mail.pgbhub.dev)\n- BYO SMTP/domain: $0.00 platform fee\n- Overage: $0.001/email with verified payment card\n- Velocity limit: 5 emails/minute on free tier\n- Reputation quarantine: 2.5% bounce rate or 0.08% complaint rate threshold",
+        billing: "## Billing & Pricing\n\nDual-axis invoicing: by Resource Type AND by Project.\n\n| Resource | Free | Paid |\n|---|---|---|\n| DB compute | 20 hours/mo | $0.014–$0.250/hr |\n| Storage | 500 MB | $0.20/GB/mo |\n| Auth MAUs | 5,000/mo | $0.002/MAU |\n| Emails | 100/mo | $0.001/email |\n| Backups | Manual only | $1/mo (<500MB), $5/mo (500MB–5GB) |\n| Containers | Micro scale-to-zero | $0.03–$0.25/hr |\n\n$5.00 minimum billing threshold.",
+        cli: "## Local CLI\n\n```bash\nnpx pgb login\nnpx pgb init myapp\nnpx pgb dev        # local simulator on port 4000\n```\n\nProject structure:\n```\nfunctions/          # serverless function modules\ncontainers/         # Dockerfile(s)\ncron/               # scheduled jobs\nmigrations/         # SQL migration files\npgb.config.json     # project config\n.env.example        # env variable template\n```",
       };
       return ok({ topic, content: topicContent[topic] || INSTRUCTIONS_TEXT });
     }
@@ -621,7 +621,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // ── pgbhub_provision_project ─────────────────────────────────────────────
     if (name === "pgbhub_provision_project") {
       const projName = String(args?.name || "").trim().toLowerCase();
-      const region   = String(args?.region || "eu-west-1");
+      const region = String(args?.region || "eu-west-1");
       const ephemeral = Boolean(args?.ephemeral ?? false);
 
       // If no API key configured, auto-provision sandbox instead
@@ -643,7 +643,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const data = (await res.json()) as Record<string, unknown>;
       if (!res.ok) throw new Error((data?.error as string) || `HTTP ${res.status}`);
 
-      const projectId  = data.id as string;
+      const projectId = data.id as string;
       const projectUrl = `https://${projectId}.pgbhub.dev`;
       return ok({
         ...data,
@@ -667,7 +667,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const pid = (args?.project_id as string) || ctx.projectId;
       const sql = String(args?.sql || "").trim();
       if (!sql) throw new Error("sql is required");
-      const params     = (args?.params as unknown[]) || [];
+      const params = (args?.params as unknown[]) || [];
       const timeout_ms = Number(args?.timeout_ms ?? 5000);
       const data = await apiPost(`/api/v1/projects/${pid}/sql`, { sql, params, timeout_ms }, ctx);
       return ok(data);
@@ -705,7 +705,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === "pgbhub_query_crud") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
-      const op    = String(args?.operation || "find").toLowerCase();
+      const op = String(args?.operation || "find").toLowerCase();
       const table = String(args?.table || "").trim();
       if (!table) throw new Error("table is required");
 
@@ -715,12 +715,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const data = await apiPost(`/api/v1/projects/${pid}/crud`, {
         operation: op,
         table,
-        data:     args?.data,
-        filter:   args?.filter,
-        limit:    args?.limit   ?? 100,
-        offset:   args?.offset  ?? 0,
+        data: args?.data,
+        filter: args?.filter,
+        limit: args?.limit ?? 100,
+        offset: args?.offset ?? 0,
         order_by: args?.order_by,
-        order:    args?.order   ?? "ASC",
+        order: args?.order ?? "ASC",
       }, ctx);
       return ok(data);
     }
@@ -730,10 +730,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const moduleName = String(args?.module_name || "").trim();
-      const code       = String(args?.code || "").trim();
-      const runtime    = String(args?.runtime || "typescript");
+      const code = String(args?.code || "").trim();
+      const runtime = String(args?.runtime || "typescript");
       if (!moduleName) throw new Error("module_name is required");
-      if (!code)       throw new Error("code is required");
+      if (!code) throw new Error("code is required");
 
       const data = await apiPost(`/api/v1/projects/${pid}/functions/deploy`, {
         module_name: moduleName,
@@ -750,12 +750,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === "pgbhub_deploy_container") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
-      const image        = String(args?.image || "").trim();
-      const tier         = String(args?.tier || "micro");
+      const image = String(args?.image || "").trim();
+      const tier = String(args?.tier || "micro");
       const min_replicas = Number(args?.min_replicas ?? 0);
       const max_replicas = Number(args?.max_replicas ?? 1);
-      const schedule     = args?.schedule as string | undefined;
-      const env          = (args?.env as Record<string, string>) || {};
+      const schedule = args?.schedule as string | undefined;
+      const env = (args?.env as Record<string, string>) || {};
       if (!image) throw new Error("image is required");
 
       const data = await apiPost(`/api/v1/projects/${pid}/containers/deploy`, {
@@ -769,11 +769,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const data = await apiPatch(`/api/v1/projects/${pid}/auth/config`, {
-        enable_email_signup:   args?.enable_email_signup,
-        enable_magic_links:    args?.enable_magic_links,
-        enable_otp:            args?.enable_otp,
-        jwt_expiry_hours:      args?.jwt_expiry_hours,
-        refresh_expiry_days:   args?.refresh_expiry_days,
+        enable_email_signup: args?.enable_email_signup,
+        enable_magic_links: args?.enable_magic_links,
+        enable_otp: args?.enable_otp,
+        jwt_expiry_hours: args?.jwt_expiry_hours,
+        refresh_expiry_days: args?.refresh_expiry_days,
         allowed_email_domains: args?.allowed_email_domains,
       }, ctx);
       return ok(data);
@@ -782,17 +782,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // ── pgbhub_upload_asset ──────────────────────────────────────────────────
     if (name === "pgbhub_upload_asset") {
       const ctx = await ensureSandbox();
-      const pid          = (args?.project_id as string) || ctx.projectId;
-      const file_path    = String(args?.file_path || "").trim();
+      const pid = (args?.project_id as string) || ctx.projectId;
+      const file_path = String(args?.file_path || "").trim();
       const content_type = String(args?.content_type || "application/octet-stream");
-      const isPublic     = Boolean(args?.public ?? false);
+      const isPublic = Boolean(args?.public ?? false);
       if (!file_path) throw new Error("file_path is required");
 
       const data = await apiPost(`/api/v1/projects/${pid}/storage/upload-url`, {
-        path:         `projects/${pid}/${file_path}`,
+        path: `projects/${pid}/${file_path}`,
         content_type,
-        public:       isPublic,
-        ttl_seconds:  900,
+        public: isPublic,
+        ttl_seconds: 900,
       }, ctx);
       return ok(data);
     }
@@ -801,16 +801,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === "pgbhub_send_mail") {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
-      const to      = String(args?.to || "").trim();
+      const to = String(args?.to || "").trim();
       const subject = String(args?.subject || "").trim();
-      const text    = String(args?.text || "").trim();
-      if (!to)      throw new Error("to is required");
+      const text = String(args?.text || "").trim();
+      if (!to) throw new Error("to is required");
       if (!subject) throw new Error("subject is required");
-      if (!text)    throw new Error("text is required");
+      if (!text) throw new Error("text is required");
 
       const data = await apiPost(`/api/v1/projects/${pid}/mail/send`, {
         to, subject, text,
-        html:     args?.html,
+        html: args?.html,
         reply_to: args?.reply_to,
       }, ctx);
       return ok(data);
