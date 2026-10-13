@@ -52,7 +52,7 @@ function parseCliArgs(): Record<string, string> {
 const cliArgs = parseCliArgs();
 
 function extractEndpoint(): string {
-  const raw = cliArgs.endpoint || cliArgs.e || process.env.PGBHUB_ENDPOINT || "https://cloud.pgbhub.com";
+  const raw = cliArgs.endpoint || cliArgs.e || process.env.PGBHUB_ENDPOINT || "https://console.pgbhub.com";
   return raw.replace(/\/$/, "");
 }
 
@@ -119,27 +119,40 @@ function authHeaders(apiKey: string): Record<string, string> {
   };
 }
 
+// Every call goes through here so a refusal from the platform (no permission,
+// unknown container, invalid input) reaches the agent as an error with the
+// platform's own message, instead of being returned as if it had succeeded.
+async function apiRequest(method: string, path: string, ctx: SandboxContext, body?: unknown): Promise<unknown> {
+  const res = await fetch(`${PGBHUB_ENDPOINT}${path}`, {
+    method,
+    headers: authHeaders(ctx.apiKey),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await res.text();
+  let data: unknown = text;
+  try { data = text ? JSON.parse(text) : {}; } catch { /* not JSON */ }
+  if (!res.ok) {
+    const d = data as { error?: string; detail?: string } | string;
+    const msg = typeof d === "string" ? d.slice(0, 300) : (d?.error || d?.detail || "");
+    throw new Error(`${method} ${path} failed (HTTP ${res.status})${msg ? `: ${msg}` : ""}`);
+  }
+  return data;
+}
+
 async function apiGet(path: string, ctx: SandboxContext): Promise<unknown> {
-  const res = await fetch(`${PGBHUB_ENDPOINT}${path}`, { headers: authHeaders(ctx.apiKey) });
-  return res.json();
+  return apiRequest("GET", path, ctx);
 }
 
 async function apiPost(path: string, body: unknown, ctx: SandboxContext): Promise<unknown> {
-  const res = await fetch(`${PGBHUB_ENDPOINT}${path}`, {
-    method: "POST",
-    headers: authHeaders(ctx.apiKey),
-    body: JSON.stringify(body),
-  });
-  return res.json();
+  return apiRequest("POST", path, ctx, body);
 }
 
 async function apiPatch(path: string, body: unknown, ctx: SandboxContext): Promise<unknown> {
-  const res = await fetch(`${PGBHUB_ENDPOINT}${path}`, {
-    method: "PATCH",
-    headers: authHeaders(ctx.apiKey),
-    body: JSON.stringify(body),
-  });
-  return res.json();
+  return apiRequest("PATCH", path, ctx, body);
+}
+
+async function apiDelete(path: string, ctx: SandboxContext): Promise<unknown> {
+  return apiRequest("DELETE", path, ctx);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,11 +381,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "pgbhub_deploy_container",
-      description: "Deploy a containerized application with auto-scaling, scale-to-zero, and timezone-aware scheduled windows. Requires a verified payment card for >1 replica or Standard+ tiers.",
+      description: "Deploy an app as a container, from a public image or straight from a git repository (built by PGB, no CI needed). Put credentials in pgbhub_set_secrets (encrypted, injected into every container) rather than in env. Requires a verified payment card for >1 replica or Standard+ tiers.",
       inputSchema: {
         type: "object",
         properties: {
-          image: { type: "string", description: "Container image reference (e.g. ghcr.io/myorg/myapp:latest or a Dockerfile path)" },
+          image: { type: "string", description: "Container image to run (e.g. ghcr.io/myorg/myapp:latest). Omit when building from source_url." },
+          source_url: { type: "string", description: "GitHub repository to build from (e.g. https://github.com/org/app). PGB clones and builds it with its Dockerfile. Public repositories work directly; a private one needs the PGB GitHub App installed on it (once, from the console)." },
+          source_branch: { type: "string", description: "Branch to build (default: main)" },
+          dockerfile_path: { type: "string", description: "Dockerfile path in the repository (default: Dockerfile)" },
+          name: { type: "string", description: "Container name (used in its URL)" },
+          port: { type: "number", description: "Port the app listens on inside the container (default: 8080)" },
           tier: {
             type: "string",
             enum: ["micro", "standard", "performance", "enterprise"],
@@ -384,11 +402,94 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "string",
             description: "Timezone-aware always-on window (e.g. '09:00-18:00 Europe/London'). Outside window: scale-to-zero.",
           },
-          env: { type: "object", description: "Environment variables to inject into the container" },
+          env: { type: "object", description: "Non-secret environment variables for the container" },
           project_id: { type: "string", description: "Project ID (defaults to configured project)" },
         },
-        required: ["image"],
       },
+    },
+    {
+      name: "pgbhub_list_containers",
+      description: "List the project's containers with their state, URL, replicas and source.",
+      inputSchema: { type: "object", properties: { project_id: { type: "string" } } },
+    },
+    {
+      name: "pgbhub_get_container_env",
+      description: "Show a container's environment variables (values masked) and the names of the project secrets injected into it.",
+      inputSchema: { type: "object", properties: { container_id: { type: "string" }, project_id: { type: "string" } }, required: ["container_id"] },
+    },
+    {
+      name: "pgbhub_set_container_env",
+      description: "Set and/or remove a container's environment variables. Changes apply on the next deploy; pass redeploy=true to roll them out now. Use pgbhub_set_secrets for credentials.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          container_id: { type: "string" },
+          set: { type: "object", description: "Variables to add or change, e.g. {\"NODE_ENV\": \"production\"}" },
+          unset: { type: "array", items: { type: "string" }, description: "Variable names to remove" },
+          redeploy: { type: "boolean", description: "Redeploy now so the change takes effect (default: false)" },
+          project_id: { type: "string" },
+        },
+        required: ["container_id"],
+      },
+    },
+    {
+      name: "pgbhub_set_secrets",
+      description: "Store project secrets (API keys, passwords, tokens), encrypted at rest and injected as environment variables into every container and function in the project. Replaces the need for CI secrets. Redeploy containers to pick up changes.",
+      inputSchema: {
+        type: "object",
+        properties: { secrets: { type: "object", description: "Name to value, e.g. {\"STRIPE_SECRET_KEY\": \"sk_live_...\"}" }, project_id: { type: "string" } },
+        required: ["secrets"],
+      },
+    },
+    {
+      name: "pgbhub_list_secrets",
+      description: "List the names of the project's secrets (values are never returned).",
+      inputSchema: { type: "object", properties: { project_id: { type: "string" } } },
+    },
+    {
+      name: "pgbhub_delete_secret",
+      description: "Delete one project secret.",
+      inputSchema: { type: "object", properties: { key: { type: "string" }, project_id: { type: "string" } }, required: ["key"] },
+    },
+    {
+      name: "pgbhub_redeploy_container",
+      description: "Rebuild a container from its current source (image or repository) and roll it out. Returns a build_id to follow with pgbhub_container_build.",
+      inputSchema: { type: "object", properties: { container_id: { type: "string" }, project_id: { type: "string" } }, required: ["container_id"] },
+    },
+    {
+      name: "pgbhub_container_build",
+      description: "Show a container's builds, or one build with its log when build_id is given.",
+      inputSchema: { type: "object", properties: { container_id: { type: "string" }, build_id: { type: "string" }, project_id: { type: "string" } }, required: ["container_id"] },
+    },
+    {
+      name: "pgbhub_container_logs",
+      description: "Recent output (stdout/stderr) from a running container, for diagnosing errors after a deploy.",
+      inputSchema: { type: "object", properties: { container_id: { type: "string" }, project_id: { type: "string" } }, required: ["container_id"] },
+    },
+    {
+      name: "pgbhub_scale_container",
+      description: "Change a container's size and replica range (min 0 = scale to zero when idle).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          container_id: { type: "string" },
+          tier: { type: "string", enum: ["micro", "standard", "performance", "enterprise"] },
+          min_replicas: { type: "number" },
+          max_replicas: { type: "number" },
+          project_id: { type: "string" },
+        },
+        required: ["container_id"],
+      },
+    },
+    {
+      name: "pgbhub_add_container_domain",
+      description: "Attach a custom domain to a container. Returns the DNS records to create.",
+      inputSchema: { type: "object", properties: { container_id: { type: "string" }, domain: { type: "string" }, project_id: { type: "string" } }, required: ["container_id", "domain"] },
+    },
+    {
+      name: "pgbhub_delete_container",
+      description: "Delete a container. Irreversible.",
+      inputSchema: { type: "object", properties: { container_id: { type: "string" }, project_id: { type: "string" } }, required: ["container_id"] },
     },
     {
       name: "pgbhub_configure_auth",
@@ -751,15 +852,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const ctx = await ensureSandbox();
       const pid = (args?.project_id as string) || ctx.projectId;
       const image = String(args?.image || "").trim();
+      const sourceUrl = String(args?.source_url || "").trim();
       const tier = String(args?.tier || "micro");
       const min_replicas = Number(args?.min_replicas ?? 0);
       const max_replicas = Number(args?.max_replicas ?? 1);
       const schedule = args?.schedule as string | undefined;
       const env = (args?.env as Record<string, string>) || {};
-      if (!image) throw new Error("image is required");
+      if (!image && !sourceUrl) throw new Error("give an image or a source_url to build from");
 
       const data = await apiPost(`/api/v1/projects/${pid}/containers/deploy`, {
-        image, tier, min_replicas, max_replicas, schedule, env,
+        ...(image ? { image } : {}),
+        ...(sourceUrl ? { source_type: "github", source_url: sourceUrl, source_branch: args?.source_branch || "main", dockerfile_path: args?.dockerfile_path || "Dockerfile" } : {}),
+        name: args?.name, port: args?.port, tier, min_replicas, max_replicas, schedule,
+        // The API reads env_vars; sending "env" used to drop every variable.
+        env_vars: env,
       }, ctx);
       return ok(data);
     }
@@ -814,6 +920,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         reply_to: args?.reply_to,
       }, ctx);
       return ok(data);
+    }
+
+    // ── Container lifecycle ──────────────────────────────────────────────────
+    const lifecycle = ["pgbhub_list_containers", "pgbhub_get_container_env", "pgbhub_set_container_env", "pgbhub_set_secrets",
+      "pgbhub_list_secrets", "pgbhub_delete_secret", "pgbhub_redeploy_container", "pgbhub_container_build",
+      "pgbhub_container_logs", "pgbhub_scale_container", "pgbhub_add_container_domain", "pgbhub_delete_container"];
+    if (lifecycle.includes(name)) {
+      const ctx = await ensureSandbox();
+      const pid = encodeURIComponent((args?.project_id as string) || ctx.projectId);
+      const cidRaw = String(args?.container_id || "").trim();
+      const cid = encodeURIComponent(cidRaw);
+      const base = `/api/v1/projects/${pid}/containers/${cid}`;
+      const needCid = () => { if (!cidRaw) throw new Error("container_id is required"); };
+      switch (name) {
+        case "pgbhub_list_containers":
+          return ok(await apiGet(`/api/v1/projects/${pid}/containers`, ctx));
+        case "pgbhub_get_container_env":
+          needCid(); return ok(await apiGet(`${base}/env`, ctx));
+        case "pgbhub_set_container_env":
+          needCid();
+          return ok(await apiPatch(`${base}/env`, { set: args?.set || {}, unset: args?.unset || [], redeploy: Boolean(args?.redeploy) }, ctx));
+        case "pgbhub_set_secrets": {
+          const secrets = args?.secrets as Record<string, unknown> | undefined;
+          if (!secrets || typeof secrets !== "object" || !Object.keys(secrets).length) throw new Error("secrets must be an object of name to value");
+          return ok(await apiPost(`/api/v1/projects/${pid}/secrets`, { secrets }, ctx));
+        }
+        case "pgbhub_list_secrets":
+          return ok(await apiGet(`/api/v1/projects/${pid}/secrets`, ctx));
+        case "pgbhub_delete_secret":
+          if (!args?.key) throw new Error("key is required");
+          return ok(await apiDelete(`/api/v1/projects/${pid}/secrets/${encodeURIComponent(String(args.key))}`, ctx));
+        case "pgbhub_redeploy_container":
+          needCid(); return ok(await apiPost(`${base}/redeploy`, {}, ctx));
+        case "pgbhub_container_build":
+          needCid();
+          return ok(await apiGet(args?.build_id ? `${base}/builds/${encodeURIComponent(String(args.build_id))}` : `${base}/builds`, ctx));
+        case "pgbhub_container_logs":
+          needCid(); return ok(await apiGet(`${base}/runtime-logs`, ctx));
+        case "pgbhub_scale_container":
+          needCid();
+          return ok(await apiPatch(base, { tier: args?.tier, min_replicas: args?.min_replicas, max_replicas: args?.max_replicas }, ctx));
+        case "pgbhub_add_container_domain":
+          needCid(); return ok(await apiPost(`${base}/domains`, { domain: args?.domain }, ctx));
+        case "pgbhub_delete_container":
+          needCid(); return ok(await apiDelete(base, ctx));
+      }
     }
 
     throw new Error(`Unknown tool: ${name}`);
