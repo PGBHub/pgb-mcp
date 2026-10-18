@@ -38,6 +38,16 @@ Provisions isolated, serverless PostgreSQL database sandboxes with dedicated cre
 
 ---
 
+### PGB Business tools (business.pgbhub.com)
+
+`business_mail_search`, `business_mail_read_thread`, `business_mail_send`, `business_mail_update`,
+`business_calendar_events`, `business_calendar_create_event`, `business_contacts_find`.
+
+They use a **mailbox API key** (`pgbm_...`) created in PGB Business **Admin → API keys**, limited to
+the mailboxes and permissions (read / send / modify) you choose. Set it as `PGB_BUSINESS_KEY`
+(optionally `PGB_BUSINESS_URL`). Email content is treated as untrusted data; agents should confirm
+with the user before sending or creating events.
+
 ## Configuration
 
 ### Claude Code / Cursor / Windsurf / Antigravity
