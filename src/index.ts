@@ -589,7 +589,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "business_mail_send",
-      description: "Send an email from a PGB Business mailbox (key needs the send scope). Subject to the workspace's sending limits. Confirm with the user before sending.",
+      description: "Send an email from a PGB Business mailbox (key needs the send scope). Subject to the workspace's sending limits. Confirm with the user before sending. If the key has an agent policy, a message outside it may be held for a person's approval (result {pending: true, id, reasons}: tell the user it is waiting in PGB Business > Approvals and don't resend it) or refused (403 with the reasons).",
       inputSchema: { type: "object", properties: {
         to: { type: "array", items: { type: "string" } }, cc: { type: "array", items: { type: "string" } },
         subject: { type: "string" }, text: { type: "string" }, html: { type: "string" },
