@@ -1021,7 +1021,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return ok(await business("GET", `calendar/${box}/events?from=${encodeURIComponent(String(a.from || ""))}&to=${encodeURIComponent(String(a.to || ""))}`));
         case "business_calendar_create_event":
           return ok(await business("POST", `calendar/${box}/events`, {
-            title: a.title, start: a.start, end: a.end, timeZone: a.timeZone, location: a.location, description: a.description, participants: a.participants }));
+            title: a.title, start: a.start, end: a.end, time_zone: a.timeZone, location: a.location, description: a.description, participants: a.participants }));
         case "business_contacts_find":
           return ok(await business("GET", `contacts/${box}/suggest?q=${encodeURIComponent(String(a.query || ""))}`));
       }
