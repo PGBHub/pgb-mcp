@@ -9,6 +9,8 @@
  *   pgbhub_configure_auth, pgbhub_upload_asset, pgbhub_send_mail
  *   business_mail_search, business_mail_read_thread, business_mail_send, business_mail_update,
  *   business_calendar_events, business_calendar_create_event, business_contacts_find (PGB_BUSINESS_KEY)
+ *   + the PGB Business suite tools in ./suite.ts (calendar_*, contacts_*, drive_*, docs_*, sheets_*, tasks_*,
+ *     notes_*, forms_*, chat_*, meet_*, invoices_*, collections_*, learn_*, shield_*, secrets_*, assistant_*, search_all)
  *
  * Resources: pgbhub://instructions, pgbhub://cheatsheet, pgbhub://project/graph
  * Prompts:   bootstrap_fullstack_app, generate_feature_module
@@ -27,6 +29,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { createSuite } from "./suite.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI argument parsing
@@ -175,6 +178,9 @@ async function business(method: string, path: string, body?: unknown): Promise<u
   if (!res.ok) throw new Error(`${method} ${path} failed (HTTP ${res.status}): ${(data as { error?: string }).error || ""}`);
   return data;
 }
+
+// The rest of the suite (./suite.ts): same key, same base URL.
+const suite = createSuite({ baseUrl: BUSINESS_URL, key: BUSINESS_KEY });
 
 async function mailboxArg(args: Record<string, unknown> | undefined): Promise<string> {
   if (args?.mailbox) return encodeURIComponent(String(args.mailbox));
@@ -623,6 +629,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description: "Find people: personal contacts, the company directory and recent correspondents.",
       inputSchema: { type: "object", properties: { query: { type: "string" }, mailbox: { type: "string" } }, required: ["query"] },
     },
+    // ── PGB Business suite (./suite.ts) ─────────────────────────────────────
+    ...suite.tools,
   ],
 }));
 
@@ -984,6 +992,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }, ctx);
       return ok(data);
     }
+
+    // ── PGB Business suite (calendar_*, drive_*, ... in ./suite.ts) ─────────
+    if (suite.has(name)) return await suite.call(name, args);
 
     // ── PGB Business ─────────────────────────────────────────────────────────
     if (name.startsWith("business_")) {
