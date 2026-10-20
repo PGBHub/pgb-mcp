@@ -117,6 +117,7 @@ describe("confirm gating", () => {
     ["invoices_get_payment_link", { document_id: "inv1" }],
     ["tasks_delete", { task_id: "t1" }],
     ["notes_delete", { note_id: "n1" }],
+    ["docs_replace", { doc_id: "d1", markdown: "# New", base_rev: "r1" }],
   ];
   for (const [name, args] of cases) {
     it(`${name} does nothing without confirm: true`, async () => {
@@ -333,5 +334,42 @@ describe("sheets", () => {
     expect(put.rev).toBe(7);
     expect(put.snapshot.sheets.s1.cellData[0][2]).toEqual({ v: "Total" });
     expect(calls[2].body).toEqual({ action: "release" });
+  });
+});
+
+describe("docs content", () => {
+  it("docs_read asks for markdown by default and passes live", async () => {
+    const { fetch, calls } = mockFetch({ "GET /api/v1/docs/items/d1/content": { json: { content: "# Hi", rev: "r1" } } });
+    const s = createSuite({ baseUrl: BASE, key: KEY, fetch });
+    const r = await s.call("docs_read", { doc_id: "d1", live: true });
+    expect(r.isError).toBeFalsy();
+    expect(calls[0].url).toBe(`${BASE}/api/v1/docs/items/d1/content?format=markdown&live=1`);
+  });
+
+  it("docs_append posts exactly one of markdown or text", async () => {
+    const { fetch, calls } = mockFetch({ "POST /api/v1/docs/items/d1/content/append": { json: { ok: true, rev: "r2" } } });
+    const s = createSuite({ baseUrl: BASE, key: KEY, fetch });
+    expect((await s.call("docs_append", { doc_id: "d1" })).isError).toBe(true);
+    expect((await s.call("docs_append", { doc_id: "d1", markdown: "a", text: "b" })).isError).toBe(true);
+    expect(calls).toHaveLength(0);
+    const r = await s.call("docs_append", { doc_id: "d1", markdown: "- item", position: "start" });
+    expect(r.isError).toBeFalsy();
+    expect(calls[0].body).toEqual({ markdown: "- item", position: "start" });
+  });
+
+  it("docs_replace sends base_rev when confirmed", async () => {
+    const { fetch, calls } = mockFetch({ "PUT /api/v1/docs/items/d1/content": { json: { ok: true, rev: "r2" } } });
+    const s = createSuite({ baseUrl: BASE, key: KEY, fetch });
+    const r = await s.call("docs_replace", { doc_id: "d1", text: "plain", base_rev: "r1", confirm: true });
+    expect(r.isError).toBeFalsy();
+    expect(calls[0].method).toBe("PUT");
+    expect(calls[0].body).toEqual({ text: "plain", base_rev: "r1" });
+  });
+
+  it("sheets_read_csv asks for csv of the named sheet", async () => {
+    const { fetch, calls } = mockFetch({ "GET /api/v1/docs/items/s1/content": { json: { content: "a,b" } } });
+    const s = createSuite({ baseUrl: BASE, key: KEY, fetch });
+    await s.call("sheets_read_csv", { doc_id: "s1", sheet: "Q4" });
+    expect(calls[0].url).toBe(`${BASE}/api/v1/docs/items/s1/content?format=csv&sheet=Q4`);
   });
 });

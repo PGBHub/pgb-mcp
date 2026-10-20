@@ -170,6 +170,14 @@ interface Tool extends ToolDef {
   run: (a: Json, api: Api) => Promise<unknown>;
 }
 
+/** Exactly one of markdown / text for the docs content endpoints. */
+function docsBody(a: Json): { markdown: string } | { text: string } {
+  const md = typeof a.markdown === "string" ? a.markdown : undefined;
+  const tx = typeof a.text === "string" ? a.text : undefined;
+  if ((md === undefined) === (tx === undefined)) throw new ToolInputError("Give exactly one of markdown or text.");
+  return md !== undefined ? { markdown: md } : { text: tx as string };
+}
+
 function tool(name: string, description: string, properties: Record<string, unknown>, required: string[], run: Tool["run"]): Tool {
   return { name, description, inputSchema: { type: "object", properties, ...(required.length ? { required } : {}) }, run };
 }
@@ -582,13 +590,35 @@ const TOOLS: Tool[] = [
     { kind: { type: "string", enum: ["doc", "sheet"], description: "Default doc" }, ...PAGE }, [],
     async (a, api) => paginate(await api.get(`docs/recent${qs({ kind: a.kind || "doc" })}`), a, "items")),
 
-  tool("docs_create", "Create an empty PGB Docs document in Drive (key needs 'modify'). Note: the API can't write document text yet; share the link for a person to fill it, or use docs_add_comment.",
+  tool("docs_create", "Create an empty PGB Docs document in Drive (key needs 'modify'). Fill it with docs_append or docs_replace.",
     { name: S("Title"), parent: S("Folder id"), space: S("my:<address> or team:<id>") }, [],
     async (a, api) => api.post("docs/new", { kind: "doc", ...pick(a, ["name", "parent", "space"]) })),
 
-  tool("docs_get", "A document's details: name, owner, my role and what I may do, last edit. (Document text isn't available over the API.)",
+  tool("docs_get", "A document's details: name, owner, my role and what I may do, last edit. For the text use docs_read.",
     { doc_id: S("Document id") }, ["doc_id"],
     async (a, api) => api.get(`docs/items/${enc(need(a, "doc_id"))}${qs({ kind: "doc" })}`)),
+
+  tool("docs_read", `A document's content as Markdown (default), plain text or editor JSON, with its rev for docs_replace. live: true reads what open editors see right now (otherwise up to ~10 s behind typing). Long documents are cut at ~1,000,000 characters (truncated: true). ${UNTRUSTED}`,
+    { doc_id: S("Document id"), format: { type: "string", enum: ["markdown", "text", "json"], description: "Default markdown" },
+      live: { type: "boolean", description: "Read the collaboration server's live copy" } }, ["doc_id"],
+    async (a, api) => api.get(`docs/items/${enc(need(a, "doc_id"))}/content${qs({ format: a.format || "markdown", live: a.live ? "1" : undefined })}`)),
+
+  tool("docs_append", "Add Markdown or plain text to the end (or start) of a document; people with it open see it appear live (needs edit access and 'modify'). Raw HTML is shown as text; only safe links and http(s) images are kept.",
+    { doc_id: S("Document id"), markdown: S("Markdown to add"), text: S("Plain text to add (instead of markdown)"),
+      position: { type: "string", enum: ["end", "start"], description: "Default end" } }, ["doc_id"],
+    async (a, api) => {
+      const body = docsBody(a);
+      return api.post(`docs/items/${enc(need(a, "doc_id"))}/content/append`, { ...body, ...(a.position ? { position: a.position } : {}) });
+    }),
+
+  tool("docs_replace", "Replace a document's whole content with Markdown or plain text (needs edit access and 'modify'). Needs base_rev from docs_read (live: true if others may be editing); a 409 means it changed meanwhile: read again and retry. The previous content is kept in version history. Overwrites the document, so confirm: true is required.",
+    { doc_id: S("Document id"), markdown: S("New Markdown content"), text: S("New plain-text content (instead of markdown)"),
+      base_rev: S("rev from docs_read"), confirm: CONFIRM }, ["doc_id", "base_rev"],
+    async (a, api) => {
+      const body = docsBody(a);
+      requireConfirm(a, "overwrites the whole document (the old content stays in version history)");
+      return api.put(`docs/items/${enc(need(a, "doc_id"))}/content`, { ...body, base_rev: need(a, "base_rev") });
+    }),
 
   tool("docs_list_comments", `Comments on a document or spreadsheet. ${UNTRUSTED}`, { doc_id: S("Document or spreadsheet id"), ...PAGE }, ["doc_id"],
     async (a, api) => paginate(await api.get(`docs/items/${enc(need(a, "doc_id"))}/comments`), a, "comments")),
@@ -596,6 +626,10 @@ const TOOLS: Tool[] = [
   tool("docs_add_comment", "Comment on a document or spreadsheet (needs commenter access and 'modify'); @mentioned people are notified.",
     { doc_id: S("Id"), body: S("Comment text"), quote: S("Text the comment is about"), parent_id: S("Reply to this comment id") }, ["doc_id", "body"],
     async (a, api) => api.post(`docs/items/${enc(need(a, "doc_id"))}/comments`, { body: need(a, "body"), ...pick(a, ["quote", "parent_id"]) })),
+
+  tool("sheets_read_csv", `A spreadsheet sheet as CSV (first sheet by default, or by name/id), plus the list of sheets. ${UNTRUSTED}`,
+    { doc_id: S("Spreadsheet id"), sheet: S("Sheet name or id") }, ["doc_id"],
+    async (a, api) => api.get(`docs/items/${enc(need(a, "doc_id"))}/content${qs({ format: "csv", sheet: a.sheet })}`)),
 
   // ── sheets ─────────────────────────────────────────────────────────────────
   tool("sheets_create", "Create a spreadsheet, optionally filled from rows (key needs 'modify').",
