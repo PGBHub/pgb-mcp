@@ -15,7 +15,7 @@ Executes or simulates registered business actions inside atomic database transac
     "preferences": { "theme": "dark" }
   },
   "dry_run": false,
-  "database": "lokl"
+  "database": "myapp"
 }
 ```
 
@@ -98,15 +98,15 @@ Add to your `.cursor/mcp.json`, `claude_desktop_config.json`, or Antigravity set
 ```json
 {
   "mcpServers": {
-    "pgbhub-lokl": {
+    "pgbhub-myapp": {
       "command": "npx",
       "args": [
         "-y",
         "@pgbhub/mcp",
         "--db",
-        "lokl",
+        "myapp",
         "--url",
-        "postgresql://lokl_app:SECRET@db.pgbhub.app:5433/lokl?sslmode=require"
+        "postgresql://myapp_app:SECRET@db.pgbhub.app:5433/myapp?sslmode=require"
       ]
     }
   }
@@ -124,7 +124,7 @@ Or using environment variables:
       "env": {
         "PGBHUB_ENDPOINT": "https://cloud.pgbhub.com",
         "PGBHUB_API_KEY": "your_api_key_here",
-        "PGBHUB_DATABASE": "lokl"
+        "PGBHUB_DATABASE": "myapp"
       }
     }
   }
