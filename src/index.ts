@@ -6,7 +6,8 @@
  *   pgbhub_help, pgbhub_provision_project, pgbhub_get_project_graph,
  *   pgbhub_execute_sql, pgbhub_create_table, pgbhub_query_crud,
  *   pgbhub_deploy_function, pgbhub_deploy_container,
- *   pgbhub_configure_auth, pgbhub_upload_asset, pgbhub_send_mail
+ *   pgbhub_configure_auth, pgbhub_upload_asset, pgbhub_signed_url, pgbhub_set_bucket_visibility,
+ *   pgbhub_send_mail (storage tools in ./storage.ts)
  *   business_mail_search, business_mail_read_thread, business_mail_send, business_mail_update,
  *   business_calendar_events, business_calendar_create_event, business_contacts_find (PGB_BUSINESS_KEY)
  *   + the PGB Business suite tools in ./suite.ts (calendar_*, contacts_*, drive_*, docs_*, sheets_*, tasks_*,
@@ -30,6 +31,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createSuite } from "./suite.js";
+import { STORAGE_TOOLS, callStorageTool, isStorageTool } from "./storage.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI argument parsing
@@ -206,7 +208,7 @@ PGBHub is a programmable backend for AI-native applications.
 - **Deploy** serverless functions (TypeScript/Python) and containerized apps
 - **Send** transactional email (100 free/mo, then $0.001/email)
 - **Manage** auth (signup, login, JWT, OTP, magic links — 5,000 free MAUs)
-- **Upload** assets to R2 / S3 storage (500 MB free storage pool)
+- **Store** files in public or private buckets, with signed upload and download URLs (500 MB free storage pool)
 
 ## Connection string
 Direct standard PostgreSQL: \`postgresql://user:pass@<projectId>.pgbhub.dev:5432/<dbname>\`
@@ -272,9 +274,13 @@ pgbhub_send_mail(to="user@example.com", subject="Welcome!", text="Thanks for sig
 pgbhub_configure_auth(enable_magic_links=true, enable_otp=true, jwt_expiry_hours=24)
 \`\`\`
 
-## 9. Upload asset
+## 9. Storage
 \`\`\`
-pgbhub_upload_asset(file_path="assets/logo.png", content_type="image/png")
+pgbhub_upload_asset(bucket="assets", file_path="logo.png", content_type="image/png")        # then PUT the bytes to url
+pgbhub_upload_asset(bucket="receipts", file_path="2026/inv-1.pdf", content_type="application/pdf", visibility="private")
+pgbhub_signed_url(bucket="receipts", path="2026/inv-1.pdf", method="GET", expires_in=900)
+pgbhub_set_bucket_visibility(bucket="receipts", visibility="private")
+pgbhub_set_bucket_visibility(bucket="assets", visibility="public", confirm_public=true)   # only after the user agrees
 \`\`\`
 `;
 
@@ -548,20 +554,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
       },
     },
-    {
-      name: "pgbhub_upload_asset",
-      description: "Generate a presigned upload URL for a file to project R2/S3 storage, with public CDN caching. 500 MB free storage pool per account.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          file_path: { type: "string", description: "Destination path within the project storage bucket (e.g. 'avatars/user-123.png')" },
-          content_type: { type: "string", description: "MIME type of the file (e.g. 'image/png', 'application/pdf')" },
-          public: { type: "boolean", description: "Make file publicly accessible via CDN (default: false)" },
-          project_id: { type: "string", description: "Project ID (defaults to configured project)" },
-        },
-        required: ["file_path", "content_type"],
-      },
-    },
+    // ── Storage: upload / signed URLs / bucket visibility (./storage.ts) ──
+    ...STORAGE_TOOLS,
     {
       name: "pgbhub_send_mail",
       description: "Send a transactional email via PGBHub managed SES (noreply@mail.pgbhub.dev) or custom BYO SMTP. 100 free emails/month; $0.001/email thereafter. Subject to velocity and reputation limits.",
@@ -801,7 +795,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         functions: "## Serverless Functions\n\nDeploy TypeScript modules with `pgbhub_deploy_function`. Each module handles a sub-path:\n- `functions/checkout.ts` → `/<projectId>.pgbhub.dev/checkout/*`\n- Named exports: GET, POST, PUT, DELETE\n- Ambient context: `{ db, user, storage, email, secrets, params, query }`\n- Cold start: <25ms via CRIU memory snapshot restore",
         containers: "## Containers\n\nDeploy Docker images with `pgbhub_deploy_container`. Features:\n- Scale-to-zero (0 MB RAM when idle, <25ms cold start via CRIU)\n- Timezone-aware scheduled windows (e.g. 09:00–18:00 Europe/London)\n- Auto-scaling: 1–20 replicas based on concurrency\n- Payment card required for >1 replica or Standard+ tier\n- Egress: SMTP ports 25/465/587 blocked by default on free tier",
         auth: "## Auth as a Service\n\nBuilt-in auth routes at `/<projectId>.pgbhub.dev/auth/*`:\n- POST /auth/signup, /auth/login, /auth/verify\n- POST /auth/magic (magic link), /auth/otp\n- GET  /auth/user (current user)\nFree for up to 5,000 MAUs/month. JWT tokens with Argon2id password hashing.",
-        storage: "## R2/S3 Storage\n\nGet presigned upload URLs via `pgbhub_upload_asset`. Features:\n- 500 MB free storage pool per account\n- Project-prefix partitioning: projects/<projectId>/<filePath>\n- Public CDN caching: Cache-Control: public, max-age=31536000\n- 15-minute presigned URL TTL",
+        storage: "## Storage\n\nFiles live in buckets. Buckets are public by default; a private bucket's objects are readable only by project members in the console, the project's secret key (pgb_sec_...), or a signed URL. Publishable keys never read private objects.\n\n- `pgbhub_upload_asset(bucket, file_path, content_type)`: a signed PUT URL; upload with `PUT <url>` and that Content-Type. Add `visibility: \"private\"` to create the bucket as private when it does not exist yet.\n- `pgbhub_signed_url(bucket, path, method)`: a signed GET (download) or PUT (upload) URL for one object. Default lifetime 15 minutes; at most 24 hours for GET and 1 hour for PUT.\n- `pgbhub_set_bucket_visibility(bucket, visibility)`: going private is immediate (cached copies already fetched are not recalled). Going public needs `confirm_public: true`; ask the user first.\n- 500 MB free storage pool per account.",
         mail: "## Transactional Mail\n\nSend email via `pgbhub_send_mail`. Features:\n- 100 free emails/month via managed AWS SES (noreply@mail.pgbhub.dev)\n- BYO SMTP/domain: $0.00 platform fee\n- Overage: $0.001/email with verified payment card\n- Velocity limit: 5 emails/minute on free tier\n- Reputation quarantine: 2.5% bounce rate or 0.08% complaint rate threshold",
         billing: "## Billing & Pricing\n\nDual-axis invoicing: by Resource Type AND by Project.\n\n| Resource | Free | Paid |\n|---|---|---|\n| DB compute | 20 hours/mo | $0.014–$0.250/hr |\n| Storage | 500 MB | $0.20/GB/mo |\n| Auth MAUs | 5,000/mo | $0.002/MAU |\n| Emails | 100/mo | $0.001/email |\n| Backups | Manual only | $1/mo (<500MB), $5/mo (500MB–5GB) |\n| Containers | Micro scale-to-zero | $0.03–$0.25/hr |\n\n$5.00 minimum billing threshold.",
         cli: "## Local CLI\n\n```bash\nnpx pgb login\nnpx pgb init myapp\nnpx pgb dev        # local simulator on port 4000\n```\n\nProject structure:\n```\nfunctions/          # serverless function modules\ncontainers/         # Dockerfile(s)\ncron/               # scheduled jobs\nmigrations/         # SQL migration files\npgb.config.json     # project config\n.env.example        # env variable template\n```",
@@ -975,22 +969,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return ok(data);
     }
 
-    // ── pgbhub_upload_asset ──────────────────────────────────────────────────
-    if (name === "pgbhub_upload_asset") {
+    // ── Storage tools (./storage.ts) ─────────────────────────────────────────
+    if (isStorageTool(name)) {
       const ctx = await ensureSandbox();
-      const pid = (args?.project_id as string) || ctx.projectId;
-      const file_path = String(args?.file_path || "").trim();
-      const content_type = String(args?.content_type || "application/octet-stream");
-      const isPublic = Boolean(args?.public ?? false);
-      if (!file_path) throw new Error("file_path is required");
-
-      const data = await apiPost(`/api/v1/projects/${pid}/storage/upload-url`, {
-        path: `projects/${pid}/${file_path}`,
-        content_type,
-        public: isPublic,
-        ttl_seconds: 900,
-      }, ctx);
-      return ok(data);
+      return ok(await callStorageTool(name, args as Record<string, unknown> | undefined, {
+        projectId: ctx.projectId,
+        request: (method, path, body) => apiRequest(method, path, ctx, body),
+      }));
     }
 
     // ── PGB Business suite (calendar_*, drive_*, ... in ./suite.ts) ─────────

@@ -36,6 +36,26 @@ Safely creates relational tables or JSONB document collections with typed column
 ### 6. `pgbhub_provision` (Database Sandbox Provisioning)
 Provisions isolated, serverless PostgreSQL database sandboxes with dedicated credentials in under 30 seconds.
 
+### 7. Storage: `pgbhub_upload_asset`, `pgbhub_signed_url`, `pgbhub_set_bucket_visibility`
+
+Files live in buckets. Buckets are **public** by default. A **private** bucket's objects can be read only by
+project members in the console, the project's **secret** key (`pgb_sec_...`), or a signed URL; publishable
+keys never read them. These tools call `/api/v1/projects/{project}/storage/buckets/...` and need the
+project's `storage` capability (Owner, Admin, Billing, or the project's secret key).
+
+| Tool | What it does |
+|---|---|
+| `pgbhub_upload_asset` | `bucket`, `file_path`, `content_type` (optional `expires_in`, `visibility`). Returns a signed upload URL; send the bytes with `PUT <url>` and the same `Content-Type`, no API key needed. With `visibility` (`public` or `private`), a bucket that does not exist yet is created with it first; an existing bucket's visibility is never changed. |
+| `pgbhub_signed_url` | `bucket`, `path`, `method` (`GET`, the default, or `PUT`), optional `expires_in` and, for PUT, `content_type`. A GET URL downloads one object, including from a private bucket. |
+| `pgbhub_set_bucket_visibility` | `bucket`, `visibility`. Going `private` takes effect within seconds (copies already cached by a browser or the CDN are not recalled). Going `public` needs `confirm_public: true`; without it the tool refuses and sends nothing. Agents should ask the user first. |
+
+Signed URLs last 15 minutes by default, at most 24 hours for GET and 1 hour for PUT. Anyone holding one can
+use it until it expires. Without a bound `content_type`, a signed PUT refuses HTML, SVG, XML and JavaScript.
+
+```json
+{ "bucket": "receipts", "file_path": "2026/inv-1.pdf", "content_type": "application/pdf", "visibility": "private" }
+```
+
 ---
 
 ### PGB Business tools (business.pgbhub.com)
